@@ -1706,8 +1706,9 @@ const Dashboard = ({
   // State Tab Summary
   const [summaryGroupBy, setSummaryGroupBy] = useState("hybrid"); // Default changed to 'hybrid'
   const [summarySubGroupBy, setSummarySubGroupBy] = useState("channel"); // Sub category
-  const [summaryFilterCrop, setSummaryFilterCrop] = useState("All"); // New state for Crop filter
+  const [grandTotalViewBy, setGrandTotalViewBy] = useState<"hybrid" | "area">("hybrid");
   const [isSummaryFilterOpen, setIsSummaryFilterOpen] = useState(true);
+  const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const enrichedSummaryDataRef = useRef<any[]>([]);
 
   // State Tab Temp (Temporary Review Page)
@@ -1724,7 +1725,6 @@ const Dashboard = ({
   // State Tab POG
   const [pogGroupBy, setPogGroupBy] = useState("hybrid");
   const [pogSubGroupBy, setPogSubGroupBy] = useState("channel");
-  const [pogFilterCrop, setPogFilterCrop] = useState("All");
   const [pogExpandedRows, setPogExpandedRows] = useState({});
   const [isPogFilterOpen, setIsPogFilterOpen] = useState(true);
 
@@ -2389,7 +2389,8 @@ const Dashboard = ({
                 item.CROP ||
                 item.CROPS ||
                 "Uncategorized Crops";
-              return { ...item, crops: cropVal };
+              const areaVal = item.area || item.Area || item.AREA;
+              return { ...item, crops: cropVal, area: areaVal };
             });
             success = true;
           }
@@ -2657,7 +2658,8 @@ const Dashboard = ({
               item.CROP ||
               item.CROPS ||
               "Uncategorized Crops";
-            return { ...item, crops: cropVal };
+            const areaVal = item.area || item.Area || item.AREA;
+            return { ...item, crops: cropVal, area: areaVal };
           });
 
           const drSales =
@@ -2745,7 +2747,8 @@ const Dashboard = ({
               item.CROP ||
               item.CROPS ||
               "Uncategorized Crops";
-            return { ...item, crops: cropVal };
+            const areaVal = item.area || item.Area || item.AREA;
+            return { ...item, crops: cropVal, area: areaVal };
           });
         }
         const drSales =
@@ -3552,7 +3555,7 @@ const Dashboard = ({
 
     const lotMap: Record<string, any> = {};
 
-    const resolveHierarchy = (kioskName: string, itemUser?: string) => {
+    const resolveHierarchy = (kioskName: string, itemUser?: string, itemArea?: string) => {
       const cleanKName = cleanForMatch(kioskName);
       const kInfo = kiosksMapByCleanName[cleanKName] || {};
       const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
@@ -3575,13 +3578,17 @@ const Dashboard = ({
       }
 
       let area = "-";
-      const cleanPic = cleanForMatch(pic);
-      const matchedMember = getTeamMemberMatch(pic);
-      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-      if (foundArea) {
-        area = foundArea;
-      } else if (cleanPic === cleanForMatch(userData?.name)) {
-        area = userData?.area || "-";
+      if (itemArea && String(itemArea).trim() !== "") {
+        area = String(itemArea).trim();
+      } else {
+        const cleanPic = cleanForMatch(pic);
+        const matchedMember = getTeamMemberMatch(pic);
+        const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+        if (foundArea) {
+          area = foundArea;
+        } else if (cleanPic === cleanForMatch(userData?.name)) {
+          area = userData?.area || "-";
+        }
       }
 
       const category = String(kInfo.category || "Uncategorized").trim();
@@ -3607,7 +3614,7 @@ const Dashboard = ({
     const targetMonthCol = monthCols[currentMonth];
 
     rawWorkingData.forEach((d) => {
-      const h = resolveHierarchy(d.kiosk, d.user);
+      const h = resolveHierarchy(d.kiosk, d.user, d.area);
       const crops =
         d.crops && String(d.crops).trim() !== ""
           ? d.crops
@@ -3845,7 +3852,7 @@ const Dashboard = ({
 
     const lotMap: Record<string, any> = {};
 
-    const resolveHierarchy = (kioskName: string, itemUser?: string) => {
+    const resolveHierarchy = (kioskName: string, itemUser?: string, itemArea?: string) => {
       const cleanKName = cleanForMatch(kioskName);
       const kInfo = kiosksMapByCleanName[cleanKName] || {};
       const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
@@ -3856,13 +3863,17 @@ const Dashboard = ({
       }
 
       let area = "-";
-      const cleanPic = cleanForMatch(pic);
-      const matchedMember = getTeamMemberMatch(pic);
-      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-      if (foundArea) {
-        area = foundArea;
-      } else if (cleanPic === cleanForMatch(userData?.name)) {
-        area = userData?.area || "-";
+      if (itemArea && String(itemArea).trim() !== "") {
+        area = String(itemArea).trim();
+      } else {
+        const cleanPic = cleanForMatch(pic);
+        const matchedMember = getTeamMemberMatch(pic);
+        const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+        if (foundArea) {
+          area = foundArea;
+        } else if (cleanPic === cleanForMatch(userData?.name)) {
+          area = userData?.area || "-";
+        }
       }
 
       const category = String(kInfo.category || "Uncategorized").trim();
@@ -3881,7 +3892,7 @@ const Dashboard = ({
         return;
       }
 
-      const h = resolveHierarchy(d.kiosk, d.user);
+      const h = resolveHierarchy(d.kiosk, d.user, d.area);
       const crops =
         d.crops && String(d.crops).trim() !== ""
           ? d.crops
@@ -4489,7 +4500,7 @@ const Dashboard = ({
 
   // Filter active POG team members based on selected crop filter
   const activePogMembers = useMemo(() => {
-    if (!pogFilterCrop || pogFilterCrop === "All") return teamMembers;
+    if (!filterBelowCrop || filterBelowCrop === "All") return teamMembers;
 
     const kiosksMapByCleanName: Record<string, any> = {};
     kiosks.forEach((k) => {
@@ -4511,7 +4522,7 @@ const Dashboard = ({
       const itemCrop = String(item.crops || "")
         .trim()
         .toLowerCase();
-      if (checkCropMatch(itemCrop, pogFilterCrop)) {
+      if (checkCropMatch(itemCrop, filterBelowCrop)) {
         const matchedMember = getTeamMemberMatch(item.pic);
         if (matchedMember) {
           matchedMembersWithCrop.add(cleanForMatch(matchedMember));
@@ -4546,7 +4557,7 @@ const Dashboard = ({
     return teamMembers.filter((m) => activeSet.has(cleanForMatch(m)));
   }, [
     teamMembers,
-    pogFilterCrop,
+    filterBelowCrop,
     pogDataProcessed,
     kiosks,
     userData,
@@ -4566,7 +4577,7 @@ const Dashboard = ({
       const isTeamMember =
         teamMembersCleanSet.has(picClean) ||
         nonLeafTeamMembersClean.some((m) => picClean.includes(m));
-      const isCropMatch = checkCropMatch(item.crops, pogFilterCrop);
+      const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
       return isTeamMember && isCropMatch;
     });
 
@@ -5117,7 +5128,7 @@ const Dashboard = ({
     pogDataProcessed,
     pogGroupBy,
     pogSubGroupBy,
-    pogFilterCrop,
+    filterBelowCrop,
     activePogMembers,
     kiosks,
     userData,
@@ -5143,7 +5154,7 @@ const Dashboard = ({
 
   // Filter team members based on selected crop filter
   const activeTeamMembers = useMemo(() => {
-    if (!summaryFilterCrop || summaryFilterCrop === "All") return teamMembers;
+    if (!filterBelowCrop || filterBelowCrop === "All") return teamMembers;
 
     // Fallback mode: if group column info is empty or not in Google Sheet yet,
     // filter members by their matching recorded crop in workingData so they always see correct data.
@@ -5168,7 +5179,7 @@ const Dashboard = ({
       const itemCrop = String(item.crops || "")
         .trim()
         .toLowerCase();
-      if (checkCropMatch(itemCrop, summaryFilterCrop)) {
+      if (checkCropMatch(itemCrop, filterBelowCrop)) {
         const kClean = cleanForMatch(item.kiosk);
         const kioskInfo = kiosksMapByCleanName[kClean] || {};
         const rawPic = normalizeName(
@@ -5217,7 +5228,7 @@ const Dashboard = ({
     return teamMembers.filter((m) => activeSet.has(cleanForMatch(m)));
   }, [
     teamMembers,
-    summaryFilterCrop,
+    filterBelowCrop,
     employees,
     userData,
     workingData,
@@ -5297,13 +5308,17 @@ const Dashboard = ({
         }
       }
       let area = "-";
-      const cleanPic = cleanForMatch(pic);
-      const matchedMember = getTeamMemberMatch(pic);
-      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-      if (foundArea) {
-        area = foundArea;
-      } else if (cleanPic === cleanForMatch(userData?.name)) {
-        area = userData?.area || "-";
+      if (item.area && String(item.area).trim() !== "") {
+        area = String(item.area).trim();
+      } else {
+        const cleanPic = cleanForMatch(pic);
+        const matchedMember = getTeamMemberMatch(pic);
+        const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+        if (foundArea) {
+          area = foundArea;
+        } else if (cleanPic === cleanForMatch(userData?.name)) {
+          area = userData?.area || "-";
+        }
       }
 
       const category = String(kioskInfo.category || "Uncategorized").trim();
@@ -5354,7 +5369,7 @@ const Dashboard = ({
       const isTeamMember =
         teamMembersCleanSet.has(picClean) ||
         nonLeafTeamMembersClean.some((m) => picClean.includes(m));
-      const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
+      const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
 
       return isTeamMember && isCropMatch;
     });
@@ -5873,7 +5888,7 @@ const Dashboard = ({
     summaryGroupBy,
     summarySubGroupBy,
     userData,
-    summaryFilterCrop,
+    filterBelowCrop,
     teamSubordinates,
     teamAreas,
     teamUpLines,
@@ -6023,14 +6038,17 @@ const Dashboard = ({
       Uncategorized: 0,
       selectedTotal: 0,
     };
-    filteredSummaryData.forEach((row) => {
-      selectedClusters.forEach((c) => {
+    summaryData.forEach((row) => {
+      ALL_CLUSTER_KEYS.forEach((c) => {
         totals[c] += row[c] || 0;
       });
-      totals.selectedTotal += row.selectedTotal || 0;
+      totals.selectedTotal += selectedClusters.reduce(
+        (sum, c) => sum + (row[c] || 0),
+        0,
+      );
     });
     return totals;
-  }, [filteredSummaryData, selectedClusters]);
+  }, [summaryData, selectedClusters, ALL_CLUSTER_KEYS]);
 
   const handleDownloadSummaryExcel = () => {
     const teamMembersCleanSet = new Set(
@@ -6049,7 +6067,7 @@ const Dashboard = ({
         const isTeamMember =
           teamMembersCleanSet.has(picClean) ||
           nonLeafTeamMembersClean.some((m) => picClean.includes(m));
-        const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
+        const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
         const isClusterMatch = selectedClusters.includes(item.cluster);
 
         return isTeamMember && isCropMatch && isClusterMatch;
@@ -6138,6 +6156,44 @@ const Dashboard = ({
     return total;
   }, [aggregatedPogData]);
 
+  const totalSummaryPog = useMemo(() => {
+    const teamMembersCleanSet = new Set(
+      activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
+    );
+    const nonLeafTeamMembersClean = activeTeamMembers
+      .map((m) => cleanForMatch(m))
+      .filter(Boolean);
+
+    const filteredData = pogDataProcessed.filter((item) => {
+      const picClean = cleanForMatch(item.pic);
+      const isTeamMember =
+        teamMembersCleanSet.has(picClean) ||
+        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+      const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
+      return isTeamMember && isCropMatch;
+    });
+
+    const total = {
+      lastQty: 0,
+      currentQty: 0,
+      sellIn: 0,
+      sellOut: 0,
+      totalInv: 0,
+      pog: 0,
+      idleStock: 0,
+    };
+    filteredData.forEach((row) => {
+      total.lastQty += row.lastQty || 0;
+      total.currentQty += row.currentQty || 0;
+      total.sellIn += row.sellIn || 0;
+      total.sellOut += row.sellOut || 0;
+      total.totalInv += row.totalInv || 0;
+      total.pog += row.pog || 0;
+      total.idleStock += row.idleStock || 0;
+    });
+    return total;
+  }, [pogDataProcessed, activeTeamMembers, filterBelowCrop]);
+
   const totalTeamStats = useMemo(() => {
     let total = 0;
     let visited = 0;
@@ -6165,6 +6221,63 @@ const Dashboard = ({
       percentage: picStat.percentage,
     };
   }, [mappingPic, totalTeamStats, teamStats]);
+
+  const grandTotalStats = useMemo(() => {
+    const teamMembersCleanSet = new Set(
+      activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
+    );
+    const nonLeafTeamMembersClean = activeTeamMembers
+      .map((m) => cleanForMatch(m))
+      .filter(Boolean);
+
+    const displayedRawItems = (enrichedSummaryDataRef.current || []).filter(
+      (item) => {
+        const picClean = cleanForMatch(item.pic);
+        const isTeamMember =
+          teamMembersCleanSet.has(picClean) ||
+          nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+        const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
+        const isClusterMatch = selectedClusters.includes(item.cluster);
+
+        return isTeamMember && isCropMatch && isClusterMatch;
+      },
+    );
+
+    const groupData: Record<
+      string,
+      { total: number; clusters: Record<string, number> }
+    > = {};
+    displayedRawItems.forEach((item) => {
+      let g = "Unknown";
+      if (grandTotalViewBy === "hybrid") {
+        g = item.hybrid || "Unknown";
+      } else if (grandTotalViewBy === "area") {
+        g = item.area || "Unknown";
+      }
+      
+      if (groupData[g] === undefined) {
+        groupData[g] = { total: 0, clusters: {} };
+      }
+      const qty = Number(item.stock) || 0;
+      groupData[g].total += qty;
+
+      const cluster = item.cluster;
+      if (groupData[g].clusters[cluster] === undefined) {
+        groupData[g].clusters[cluster] = 0;
+      }
+      groupData[g].clusters[cluster] += qty;
+    });
+
+    const sortedGroups = Object.entries(groupData)
+      .sort((a, b) => b[1].total - a[1].total) // Sort descending by total kg
+      .map(([name, data]) => ({
+        name,
+        total: data.total,
+        clusters: data.clusters,
+      }));
+
+    return sortedGroups;
+  }, [summaryData, activeTeamMembers, filterBelowCrop, selectedClusters, grandTotalViewBy]);
 
   const categoryFillingStats = useMemo(() => {
     let total = 0;
@@ -6994,6 +7107,441 @@ const Dashboard = ({
     );
   }
 
+  const renderPogKpiCard = (isSummaryTab: boolean) => {
+    const dataEmpty = isSummaryTab
+      ? filteredSummaryData.length === 0
+      : aggregatedPogData.length === 0;
+    if (dataEmpty) return null;
+    
+    const currentTotal = isSummaryTab ? totalSummaryPog : totalPog;
+    const isFilterOpen = isSummaryTab ? isSummaryFilterOpen : isPogFilterOpen;
+    const toggleFilter = () =>
+      isSummaryTab
+        ? setIsSummaryFilterOpen(!isSummaryFilterOpen)
+        : setIsPogFilterOpen(!isPogFilterOpen);
+
+    return (
+      <div
+        onClick={() => {
+          if (window.innerWidth < 768) {
+            toggleFilter();
+          }
+        }}
+        className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white mb-1.5 md:mb-0 md:hover:scale-100 md:active:scale-100"
+      >
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[18px] text-white/80">
+              tune
+            </span>
+            <div className="flex flex-col">
+              <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
+                Grand Total
+              </span>
+              {isSummaryTab && (
+                <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
+                  {filterBelowCrop || "All"}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="font-bold text-xl xl:text-2xl text-white">
+              {formatNum(isSummaryTab ? totalSummary.selectedTotal : currentTotal.pog)}
+            </span>
+            <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">
+              {isSummaryTab ? "Total Kg" : "POG"}
+            </span>
+          </div>
+        </div>
+
+        {isSummaryTab ? (
+          <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-4 mt-2">
+            {ALL_CLUSTER_KEYS.map((clusterKey) => {
+              if (
+                clusterKey === "Uncategorized" &&
+                (!totalSummary[clusterKey] || totalSummary[clusterKey] === 0)
+              )
+                return null;
+              const clusterConfig = CLUSTER_CONFIG.find(
+                (c) => c.key === clusterKey,
+              );
+              const isSelected = selectedClusters.includes(clusterKey);
+              return (
+                <div
+                  key={clusterKey}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedClusters((prev) =>
+                      prev.includes(clusterKey)
+                        ? prev.filter((k) => k !== clusterKey)
+                        : [...prev, clusterKey]
+                    );
+                  }}
+                  className={`flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${isSelected ? "opacity-100 hover:bg-white/10 rounded-md" : "opacity-40 hover:opacity-60"}`}
+                >
+                  <span className="text-[9px] xl:text-[10px] font-bold uppercase tracking-wider text-white/85 mb-1 truncate w-full">
+                    {clusterConfig?.label || clusterKey}
+                  </span>
+                  <span className="font-bold text-sm xl:text-base truncate w-full text-white">
+                    {formatNum(totalSummary[clusterKey])}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-row w-full gap-1.5 md:gap-2 border-t border-white/15 pt-3.5 mt-1">
+            {/* Table 1: Opening and End Inv group */}
+            <div className="flex-[2] flex divide-x divide-white/15 bg-white/5 rounded-[12px] p-0.5">
+              <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                  Opening
+                </span>
+                <span className="font-bold text-xs truncate w-full text-white">
+                  {formatNum(currentTotal.lastQty)}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                  End Inv
+                </span>
+                <span className="font-bold text-xs truncate w-full text-white">
+                  {formatNum(currentTotal.currentQty)}
+                </span>
+              </div>
+            </div>
+
+            {/* Table 2: Stock in, idle stock, POG group */}
+            <div className="flex-[3] flex divide-x divide-white/20 bg-gradient-to-br from-white/25 via-white/15 to-white/25 border border-white/20 rounded-[12px] p-0.5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
+              <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-white/95 mb-0.5 truncate w-full">
+                  Stock In
+                </span>
+                <span className="font-extrabold text-xs truncate w-full text-white">
+                  {formatNum(currentTotal.sellIn)}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">
+                  Idle Stock
+                </span>
+                <span className="font-extrabold text-xs truncate w-full text-amber-100">
+                  {formatNum(currentTotal.idleStock)}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
+                <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">
+                  POG
+                </span>
+                <span className="font-black text-xs truncate w-full text-cyan-50">
+                  {formatNum(currentTotal.pog)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-white/15 pt-5 mt-4 w-full">
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
+            {/* CHART 1: VISIT COVERAGE */}
+            <div className="flex flex-col items-center text-center p-1 sm:p-3">
+              <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                Kunjungan (Visit)
+              </h4>
+              <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
+                <svg
+                  viewBox="0 0 220 220"
+                  className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                >
+                  <circle
+                    stroke="rgba(255, 255, 255, 0.15)"
+                    fill="transparent"
+                    strokeWidth={16}
+                    r={95}
+                    cx={110}
+                    cy={110}
+                  />
+                  <circle
+                    stroke="white"
+                    fill="transparent"
+                    strokeWidth={16}
+                    strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
+                    strokeDashoffset={
+                      2 * Math.PI * 95 -
+                      (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)
+                    }
+                    style={{
+                      strokeDashoffset: `${2 * Math.PI * 95 - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px`,
+                    }}
+                    r={95}
+                    cx={110}
+                    cy={110}
+                    strokeLinecap="round"
+                    className="transition-[stroke-dashoffset] duration-700 ease-out"
+                  />
+                </svg>
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">
+                    {activeVisitStats.percentage}%
+                  </span>
+                  <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">
+                    Visited
+                  </span>
+                </div>
+              </div>
+              <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
+                {!mappingPic ||
+                cleanForMatch(mappingPic) === "allteam" ||
+                cleanForMatch(mappingPic) === "all_team"
+                  ? "Team"
+                  : normalizeName(mappingPic)}{" "}
+                sudah melakukan visit sebanyak{" "}
+                <span className="font-bold text-white">
+                  {activeVisitStats.visited}
+                </span>{" "}
+                dari{" "}
+                <span className="font-bold text-white">
+                  {activeVisitStats.total}
+                </span>{" "}
+                Partner{" "}
+                <span className="text-white/80">
+                  ({activeVisitStats.percentage}%)
+                </span>
+              </p>
+            </div>
+
+            {/* CHART 2: CATEGORY DISTRIBUTION */}
+            <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
+              <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                Kategori Partner
+              </h4>
+              <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
+                <svg
+                  viewBox="0 0 220 220"
+                  className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                >
+                  <circle
+                    stroke="rgba(255, 255, 255, 0.1)"
+                    fill="transparent"
+                    strokeWidth={16}
+                    r={95}
+                    cx={110}
+                    cy={110}
+                  />
+                  {categoryChartSegments.map((segment) => (
+                    <circle
+                      key={segment.name}
+                      stroke={segment.color}
+                      fill="transparent"
+                      strokeWidth={16}
+                      strokeLinecap="round"
+                      strokeDasharray={segment.strokeDasharray}
+                      strokeDashoffset={segment.strokeDashoffset}
+                      style={{
+                        strokeDashoffset: `${segment.strokeDashoffset}px`,
+                      }}
+                      r={95}
+                      cx={110}
+                      cy={110}
+                      className="transition-[stroke-dashoffset] duration-700 ease-out"
+                    />
+                  ))}
+                </svg>
+                <div className="absolute flex flex-col items-center justify-center">
+                  <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">
+                    {categoryDistributionStats.total}
+                  </span>
+                  <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">
+                    Partners
+                  </span>
+                </div>
+              </div>
+              <div className="w-full mt-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
+                  {categoryChartSegments.map((segment) => (
+                    <div
+                      key={segment.name}
+                      className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300"
+                    >
+                      <span
+                        className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: segment.color }}
+                      />
+                      <span className="font-semibold text-white/90 truncate flex-1 text-left">
+                        {segment.name}
+                      </span>
+                      <span className="font-mono font-bold text-white shrink-0">
+                        {segment.value}{" "}
+                        <span className="text-[7px] sm:text-[8px] font-normal text-white/75">
+                          ({Math.round(segment.percentage)}%)
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderGrandTotalCard = () => {
+    if (filteredSummaryData.length === 0) return null;
+    return (
+      <div
+        className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] transition-all duration-250 select-none text-white flex flex-col gap-6 lg:gap-8"
+      >
+        {/* Left Side: Grand Total & Clusters */}
+        <div className="flex flex-col w-full shrink-0 justify-center">
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-white/80">
+                tune
+              </span>
+              <div className="flex flex-col mr-2">
+                <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
+                  Grand Total
+                </span>
+                <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
+                  {filterBelowCrop || "All"}
+                </span>
+              </div>
+              <div className="flex bg-white/10 p-0.5 rounded-lg border border-white/10 ml-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGrandTotalViewBy("hybrid");
+                  }}
+                  className={`px-3.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    grandTotalViewBy === "hybrid"
+                      ? "bg-white text-primary shadow-sm"
+                      : "text-white/70 hover:text-white"
+                  }`}
+                >
+                  Hybrid
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setGrandTotalViewBy("area");
+                  }}
+                  className={`px-3.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    grandTotalViewBy === "area"
+                      ? "bg-white text-primary shadow-sm"
+                      : "text-white/70 hover:text-white"
+                  }`}
+                >
+                  Area
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="font-bold text-2xl xl:text-3xl text-white tracking-tight">
+                {formatNum(totalSummary.selectedTotal)}
+              </span>
+              <span className="text-[8px] xl:text-[9px] text-white/80 uppercase tracking-widest font-bold">
+                Total Kg
+              </span>
+            </div>
+          </div>
+          <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-4 mt-2">
+            {ALL_CLUSTER_KEYS.map((clusterKey) => {
+              if (
+                clusterKey === "Uncategorized" &&
+                (!totalSummary[clusterKey] || totalSummary[clusterKey] === 0)
+              )
+                return null;
+              const clusterConfig = CLUSTER_CONFIG.find(
+                (c) => c.key === clusterKey,
+              );
+              const isSelected = selectedClusters.includes(clusterKey);
+              return (
+                <div
+                  key={clusterKey}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedClusters((prev) =>
+                      prev.includes(clusterKey)
+                        ? prev.filter((k) => k !== clusterKey)
+                        : [...prev, clusterKey]
+                    );
+                  }}
+                  className={`flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${isSelected ? "opacity-100 hover:bg-white/10 rounded-md" : "opacity-40 hover:opacity-60"}`}
+                >
+                  <span className="text-[9px] xl:text-[10px] font-bold uppercase tracking-wider text-white/85 mb-1 truncate w-full">
+                    {clusterConfig?.label || clusterKey}
+                  </span>
+                  <span className="font-bold text-sm xl:text-base truncate w-full text-white">
+                    {formatNum(totalSummary[clusterKey])}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Side: Total per Item & Aging */}
+        <div className="flex flex-col flex-1 border-t border-white/15 pt-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full max-h-[300px] lg:max-h-none overflow-y-auto pr-1 custom-scrollbar">
+            {grandTotalStats.map((stat) => (
+              <div
+                key={stat.name}
+                className="bg-white/10 border border-white/20 p-3 rounded-[20px] flex flex-col shadow-sm"
+              >
+                <div className="flex items-center gap-2.5 mb-2">
+                  <div className="size-7 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+                    <span className="material-symbols-outlined text-[14px]">
+                      {grandTotalViewBy === "area" ? "map" : "eco"}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1 flex justify-between items-center">
+                    <p className="text-[12px] font-bold text-white uppercase tracking-wider truncate leading-tight">
+                      {stat.name}
+                    </p>
+                    <p className="text-[13px] font-extrabold text-white tracking-tight leading-none">
+                      {formatNum(stat.total)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-2 mt-2">
+                  {selectedClusters.map((clusterKey) => {
+                    const val = stat.clusters[clusterKey] || 0;
+                    if (clusterKey === "Uncategorized" && val === 0)
+                      return null;
+                    const clusterConfig = CLUSTER_CONFIG.find(
+                      (c) => c.key === clusterKey,
+                    );
+                    return (
+                      <div
+                        key={clusterKey}
+                        className="flex-1 min-w-0 px-0.5 flex flex-col items-center justify-center text-center"
+                      >
+                        <span className="text-[6.5px] font-bold uppercase tracking-wider text-white/70 mb-0.5 truncate w-full">
+                          {clusterConfig?.label || clusterKey}
+                        </span>
+                        <span className="font-bold text-[8.5px] truncate w-full text-white">
+                          {formatNum(val)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {grandTotalStats.length === 0 && (
+              <div className="col-span-full py-6 text-center text-white/60 text-xs font-medium">
+                Tidak ada data.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="w-full max-w-2xl mx-auto lg:max-w-5xl xl:max-w-6xl px-5 pb-8 relative">
       <div className="flex items-stretch gap-2 mb-8 mt-6 -ml-2.5">
@@ -7160,159 +7708,186 @@ const Dashboard = ({
             </div>
           </div>
 
-          {/* Detailed Filters (Filter 2: Month, Channel, Material, Team, Area) */}
-          <div className="bg-white p-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 mb-6">
-            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-              <span className="material-symbols-outlined text-primary text-[18px] font-semibold">
-                filter_alt
-              </span>
-              <h4 className="text-[11px] font-bold text-[#181a2c] uppercase tracking-wider">
-                Filter Dashboard Analisis Eksekutif
-              </h4>
-            </div>
+          {/* Floating Filter Button */}
+          <button
+            onClick={() => setIsOverviewFilterOpen(!isOverviewFilterOpen)}
+            className="fixed bottom-[110px] right-6 lg:bottom-10 lg:right-10 z-[60] bg-gradient-to-br from-[#154be2] to-[#123ebd] text-white p-3.5 lg:p-4 rounded-full shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-105 active:scale-95 transition-all duration-300"
+          >
+            <span className="material-symbols-outlined text-[24px] lg:text-[28px]">filter_alt</span>
+          </button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-              {/* Filter 2 - Month */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Bulan
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowMonth}
-                    onChange={(e) => setFilterBelowMonth(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Bulan</option>
-                    {filterOptions.months.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
+          {/* Floating Detailed Filters */}
+          <div
+            className={`fixed inset-0 z-[70] transition-all duration-300 flex items-center justify-center p-4 ${isOverviewFilterOpen ? "opacity-100 visible pointer-events-auto" : "opacity-0 invisible pointer-events-none"}`}
+          >
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300" 
+              onClick={() => setIsOverviewFilterOpen(false)} 
+            />
+            
+            {/* Filter Content */}
+            <div className={`relative w-full max-w-4xl bg-white p-6 md:p-8 rounded-[32px] shadow-[0_24px_64px_rgba(0,0,0,0.25)] transition-all duration-300 transform ${isOverviewFilterOpen ? "scale-100 translate-y-0" : "scale-95 translate-y-4"}`}>
+              <div className="flex items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary text-[20px] lg:text-[24px] font-semibold">
+                    filter_alt
                   </span>
+                  <h4 className="text-xs lg:text-sm font-bold text-[#181a2c] uppercase tracking-wider">
+                    Filter Dashboard Analisis
+                  </h4>
                 </div>
+                <button 
+                  onClick={() => setIsOverviewFilterOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
               </div>
 
-              {/* Filter 2 - Channel */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Channel (Kategori)
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowChannel}
-                    onChange={(e) => setFilterBelowChannel(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Channel</option>
-                    {filterOptions.channels.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
-                  </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 lg:gap-5">
+                {/* Filter 2 - Month */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Bulan
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowMonth}
+                      onChange={(e) => setFilterBelowMonth(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua Bulan</option>
+                      {filterOptions.months.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Filter 2 - Material */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Hybrid
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowMaterial}
-                    onChange={(e) => setFilterBelowMaterial(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Hybrid</option>
-                    {filterOptions.materials.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
-                  </span>
+                {/* Filter 2 - Channel */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Channel
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowChannel}
+                      onChange={(e) => setFilterBelowChannel(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua Channel</option>
+                      {filterOptions.channels.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Filter 2 - Team */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Tim (PIC)
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowTeam}
-                    onChange={(e) => setFilterBelowTeam(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Tim PIC</option>
-                    {filterOptions.teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
-                  </span>
+                {/* Filter 2 - Material */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Hybrid
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowMaterial}
+                      onChange={(e) => setFilterBelowMaterial(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua Hybrid</option>
+                      {filterOptions.materials.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Filter 2 - Area */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Wilayah (Area)
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowArea}
-                    onChange={(e) => setFilterBelowArea(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Wilayah</option>
-                    {filterOptions.areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
-                  </span>
+                {/* Filter 2 - Team */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Tim (PIC)
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowTeam}
+                      onChange={(e) => setFilterBelowTeam(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua PIC</option>
+                      {filterOptions.teams.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Filter 2 - Crop */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Komoditas (Crop)
-                </label>
-                <div className="relative">
-                  <select
-                    value={filterBelowCrop}
-                    onChange={(e) => setFilterBelowCrop(e.target.value)}
-                    className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
-                  >
-                    <option value="All">Semua Crop</option>
-                    {["Field Corn", "Fresh Corn", "Vegetables"].map((crop) => (
-                      <option key={crop} value={crop}>
-                        {crop}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
-                    expand_more
-                  </span>
+                {/* Filter 2 - Area */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Wilayah
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowArea}
+                      onChange={(e) => setFilterBelowArea(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua Wilayah</option>
+                      {filterOptions.areas.map((a) => (
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter 2 - Crop */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] lg:text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Komoditas
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={filterBelowCrop}
+                      onChange={(e) => setFilterBelowCrop(e.target.value)}
+                      className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-4 py-3 text-xs lg:text-sm font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
+                    >
+                      <option value="All">Semua Crop</option>
+                      {["Field Corn", "Fresh Corn", "Vegetables"].map((crop) => (
+                        <option key={crop} value={crop}>
+                          {crop}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -7434,6 +8009,10 @@ const Dashboard = ({
                 Total penjualan ke petani
               </p>
             </div>
+          </div>
+
+          <div className="mb-6">
+            {renderGrandTotalCard()}
           </div>
 
           {/* Charts Grid Row 1 */}
@@ -9292,205 +9871,7 @@ const Dashboard = ({
 
           <div className="flex flex-col gap-3.5 mb-6">
             <div className="flex flex-col md:flex-row-reverse gap-4 md:gap-6 md:items-stretch">
-              {filteredSummaryData.length > 0 && (
-                <div
-                  onClick={() => {
-                    if (window.innerWidth < 768) {
-                      setIsSummaryFilterOpen(!isSummaryFilterOpen);
-                    }
-                  }}
-                  className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white md:hover:scale-100 md:active:scale-100"
-                >
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[18px] text-white/80">
-                        tune
-                      </span>
-                      <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
-                        Grand Total
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="font-bold text-xl text-white">
-                        {formatNum(totalSummary.selectedTotal)}
-                      </span>
-                      <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">
-                        Total Kg
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-3.5 mt-1">
-                    {selectedClusters.map((clusterKey) => {
-                      if (
-                        clusterKey === "Uncategorized" &&
-                        (!totalSummary[clusterKey] ||
-                          totalSummary[clusterKey] === 0)
-                      )
-                        return null;
-                      const clusterConfig = CLUSTER_CONFIG.find(
-                        (c) => c.key === clusterKey,
-                      );
-                      return (
-                        <div
-                          key={clusterKey}
-                          className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center"
-                        >
-                          <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
-                            {clusterConfig?.label || clusterKey}
-                          </span>
-                          <span className="font-bold text-xs truncate w-full text-white">
-                            {formatNum(totalSummary[clusterKey])}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="border-t border-white/15 pt-5 mt-4 w-full">
-                    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
-                      {/* CHART 1: VISIT COVERAGE */}
-                      <div className="flex flex-col items-center text-center p-1 sm:p-3">
-                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
-                          Kunjungan (Visit)
-                        </h4>
-                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
-                          <svg
-                            viewBox="0 0 220 220"
-                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
-                          >
-                            <circle
-                              stroke="rgba(255, 255, 255, 0.15)"
-                              fill="transparent"
-                              strokeWidth={16}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                            />
-                            <circle
-                              stroke="white"
-                              fill="transparent"
-                              strokeWidth={16}
-                              strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
-                              strokeDashoffset={
-                                2 * Math.PI * 95 -
-                                (activeVisitStats.percentage / 100) *
-                                  (2 * Math.PI * 95)
-                              }
-                              style={{
-                                strokeDashoffset: `${2 * Math.PI * 95 - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px`,
-                              }}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                              strokeLinecap="round"
-                              className="transition-[stroke-dashoffset] duration-700 ease-out"
-                            />
-                          </svg>
-                          <div className="absolute flex flex-col items-center justify-center">
-                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">
-                              {activeVisitStats.percentage}%
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">
-                              Visited
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
-                          {!mappingPic ||
-                          cleanForMatch(mappingPic) === "allteam" ||
-                          cleanForMatch(mappingPic) === "all_team"
-                            ? "Team"
-                            : normalizeName(mappingPic)}{" "}
-                          sudah melakukan visit sebanyak{" "}
-                          <span className="font-bold text-white">
-                            {activeVisitStats.visited}
-                          </span>{" "}
-                          dari{" "}
-                          <span className="font-bold text-white">
-                            {activeVisitStats.total}
-                          </span>{" "}
-                          Partner{" "}
-                          <span className="text-white/80">
-                            ({activeVisitStats.percentage}%)
-                          </span>
-                        </p>
-                      </div>
-
-                      {/* CHART 2: CATEGORY DISTRIBUTION */}
-                      <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
-                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
-                          Kategori Partner
-                        </h4>
-                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
-                          <svg
-                            viewBox="0 0 220 220"
-                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
-                          >
-                            <circle
-                              stroke="rgba(255, 255, 255, 0.1)"
-                              fill="transparent"
-                              strokeWidth={16}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                            />
-                            {categoryChartSegments.map((segment) => (
-                              <circle
-                                key={segment.name}
-                                stroke={segment.color}
-                                fill="transparent"
-                                strokeWidth={16}
-                                strokeLinecap="round"
-                                strokeDasharray={segment.strokeDasharray}
-                                strokeDashoffset={segment.strokeDashoffset}
-                                style={{
-                                  strokeDashoffset: `${segment.strokeDashoffset}px`,
-                                }}
-                                r={95}
-                                cx={110}
-                                cy={110}
-                                className="transition-[stroke-dashoffset] duration-700 ease-out"
-                              />
-                            ))}
-                          </svg>
-                          <div className="absolute flex flex-col items-center justify-center">
-                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">
-                              {categoryDistributionStats.total}
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">
-                              Partners
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-full mt-1.5">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
-                            {categoryChartSegments.map((segment) => (
-                              <div
-                                key={segment.name}
-                                className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300"
-                              >
-                                <span
-                                  className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: segment.color }}
-                                />
-                                <span className="font-semibold text-white/90 truncate flex-1 text-left">
-                                  {segment.name}
-                                </span>
-                                <span className="font-mono font-bold text-white shrink-0">
-                                  {segment.value}{" "}
-                                  <span className="text-[7px] sm:text-[8px] font-normal text-white/75">
-                                    ({Math.round(segment.percentage)}%)
-                                  </span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {filteredSummaryData.length > 0 && renderPogKpiCard(true)}
 
               <div
                 className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isSummaryFilterOpen ? "block" : "hidden md:block"}`}
@@ -9546,8 +9927,8 @@ const Dashboard = ({
                       </label>
                       <div className="relative">
                         <select
-                          value={summaryFilterCrop}
-                          onChange={(e) => setSummaryFilterCrop(e.target.value)}
+                          value={filterBelowCrop}
+                          onChange={(e) => setFilterBelowCrop(e.target.value)}
                           className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none"
                         >
                           {availableCrops.map((crop) => (
@@ -9764,228 +10145,7 @@ const Dashboard = ({
 
           <div className="flex flex-col gap-3.5 mb-6">
             <div className="flex flex-col md:flex-row-reverse gap-4 md:gap-6 md:items-stretch">
-              {aggregatedPogData.length > 0 && (
-                <div
-                  onClick={() => {
-                    if (window.innerWidth < 768) {
-                      setIsPogFilterOpen(!isPogFilterOpen);
-                    }
-                  }}
-                  className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white mb-1.5 md:mb-0 md:hover:scale-100 md:active:scale-100"
-                >
-                  <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[18px] text-white/80">
-                        tune
-                      </span>
-                      <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
-                        Grand Total
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end">
-                      <span className="font-bold text-xl text-white">
-                        {formatNum(totalPog.pog)}
-                      </span>
-                      <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">
-                        POG
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-row w-full gap-1.5 md:gap-2 border-t border-white/15 pt-3.5 mt-1">
-                    {/* Table 1: Opening and End Inv group */}
-                    <div className="flex-[2] flex divide-x divide-white/15 bg-white/5 rounded-[12px] p-0.5">
-                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
-                          Opening
-                        </span>
-                        <span className="font-bold text-xs truncate w-full text-white">
-                          {formatNum(totalPog.lastQty)}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
-                          End Inv
-                        </span>
-                        <span className="font-bold text-xs truncate w-full text-white">
-                          {formatNum(totalPog.currentQty)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Table 2: Stock in, idle stock, POG group */}
-                    <div className="flex-[3] flex divide-x divide-white/20 bg-gradient-to-br from-white/25 via-white/15 to-white/25 border border-white/20 rounded-[12px] p-0.5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
-                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/95 mb-0.5 truncate w-full">
-                          Stock In
-                        </span>
-                        <span className="font-extrabold text-xs truncate w-full text-white">
-                          {formatNum(totalPog.sellIn)}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">
-                          Idle Stock
-                        </span>
-                        <span className="font-extrabold text-xs truncate w-full text-amber-100">
-                          {formatNum(totalPog.idleStock)}
-                        </span>
-                      </div>
-                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">
-                          POG
-                        </span>
-                        <span className="font-black text-xs truncate w-full text-cyan-50">
-                          {formatNum(totalPog.pog)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/15 pt-5 mt-4 w-full">
-                    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
-                      {/* CHART 1: VISIT COVERAGE */}
-                      <div className="flex flex-col items-center text-center p-1 sm:p-3">
-                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
-                          Kunjungan (Visit)
-                        </h4>
-                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
-                          <svg
-                            viewBox="0 0 220 220"
-                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
-                          >
-                            <circle
-                              stroke="rgba(255, 255, 255, 0.15)"
-                              fill="transparent"
-                              strokeWidth={16}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                            />
-                            <circle
-                              stroke="white"
-                              fill="transparent"
-                              strokeWidth={16}
-                              strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
-                              strokeDashoffset={
-                                2 * Math.PI * 95 -
-                                (activeVisitStats.percentage / 100) *
-                                  (2 * Math.PI * 95)
-                              }
-                              style={{
-                                strokeDashoffset: `${2 * Math.PI * 95 - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px`,
-                              }}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                              strokeLinecap="round"
-                              className="transition-[stroke-dashoffset] duration-700 ease-out"
-                            />
-                          </svg>
-                          <div className="absolute flex flex-col items-center justify-center">
-                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">
-                              {activeVisitStats.percentage}%
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">
-                              Visited
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
-                          {!mappingPic ||
-                          cleanForMatch(mappingPic) === "allteam" ||
-                          cleanForMatch(mappingPic) === "all_team"
-                            ? "Team"
-                            : normalizeName(mappingPic)}{" "}
-                          sudah melakukan visit sebanyak{" "}
-                          <span className="font-bold text-white">
-                            {activeVisitStats.visited}
-                          </span>{" "}
-                          dari{" "}
-                          <span className="font-bold text-white">
-                            {activeVisitStats.total}
-                          </span>{" "}
-                          Partner{" "}
-                          <span className="text-white/80">
-                            ({activeVisitStats.percentage}%)
-                          </span>
-                        </p>
-                      </div>
-
-                      {/* CHART 2: CATEGORY DISTRIBUTION */}
-                      <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
-                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
-                          Kategori Partner
-                        </h4>
-                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
-                          <svg
-                            viewBox="0 0 220 220"
-                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
-                          >
-                            <circle
-                              stroke="rgba(255, 255, 255, 0.1)"
-                              fill="transparent"
-                              strokeWidth={16}
-                              r={95}
-                              cx={110}
-                              cy={110}
-                            />
-                            {categoryChartSegments.map((segment) => (
-                              <circle
-                                key={segment.name}
-                                stroke={segment.color}
-                                fill="transparent"
-                                strokeWidth={16}
-                                strokeLinecap="round"
-                                strokeDasharray={segment.strokeDasharray}
-                                strokeDashoffset={segment.strokeDashoffset}
-                                style={{
-                                  strokeDashoffset: `${segment.strokeDashoffset}px`,
-                                }}
-                                r={95}
-                                cx={110}
-                                cy={110}
-                                className="transition-[stroke-dashoffset] duration-700 ease-out"
-                              />
-                            ))}
-                          </svg>
-                          <div className="absolute flex flex-col items-center justify-center">
-                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">
-                              {categoryDistributionStats.total}
-                            </span>
-                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">
-                              Partners
-                            </span>
-                          </div>
-                        </div>
-                        <div className="w-full mt-1.5">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
-                            {categoryChartSegments.map((segment) => (
-                              <div
-                                key={segment.name}
-                                className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300"
-                              >
-                                <span
-                                  className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
-                                  style={{ backgroundColor: segment.color }}
-                                />
-                                <span className="font-semibold text-white/90 truncate flex-1 text-left">
-                                  {segment.name}
-                                </span>
-                                <span className="font-mono font-bold text-white shrink-0">
-                                  {segment.value}{" "}
-                                  <span className="text-[7px] sm:text-[8px] font-normal text-white/75">
-                                    ({Math.round(segment.percentage)}%)
-                                  </span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {renderPogKpiCard(false)}
 
               <div
                 className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isPogFilterOpen ? "block" : "hidden md:block"}`}
@@ -10041,8 +10201,8 @@ const Dashboard = ({
                       </label>
                       <div className="relative">
                         <select
-                          value={pogFilterCrop}
-                          onChange={(e) => setPogFilterCrop(e.target.value)}
+                          value={filterBelowCrop}
+                          onChange={(e) => setFilterBelowCrop(e.target.value)}
                           className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7"
                         >
                           {availableCrops.map((crop) => (
@@ -11922,6 +12082,7 @@ export default function App() {
   const [filterBelowTeam, setFilterBelowTeam] = useState<string>("All");
   const [filterBelowArea, setFilterBelowArea] = useState<string>("All");
   const [filterBelowCrop, setFilterBelowCrop] = useState<string>("All");
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
   const isAditya =
     userData &&
@@ -12078,12 +12239,19 @@ export default function App() {
       className={`min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-[#fbf8ff] font-sans selection:bg-[#edecff] text-[#181a2c] flex flex-col md:flex-row w-full mx-auto relative transition-all duration-300`}
     >
       {/* Desktop Sidebar (Visible on md and larger) */}
-      <div className="hidden md:flex flex-col w-20 lg:w-64 bg-gradient-to-b from-[#154be2]/[0.09] via-[#154be2]/[0.04] to-white/70 backdrop-blur-xl border-r border-[#154be2]/12 h-screen sticky top-0 z-50 transition-all duration-300 left-0">
-        <div className="flex items-center justify-center lg:justify-start gap-4 h-24 px-0 lg:px-8 border-b border-[#154be2]/10">
+      <div
+        className={`hidden md:flex flex-col ${isSidebarExpanded ? "w-20 lg:w-64" : "w-20"} bg-gradient-to-b from-[#154be2]/[0.09] via-[#154be2]/[0.04] to-white/70 backdrop-blur-xl border-r border-[#154be2]/12 h-screen sticky top-0 z-50 transition-all duration-300 left-0`}
+      >
+        <div
+          onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+          className="flex items-center justify-center lg:justify-start gap-4 h-24 px-0 lg:px-8 border-b border-[#154be2]/10 cursor-pointer hover:bg-white/40 transition-colors"
+        >
           <div className="size-11 shrink-0 bg-gradient-to-br from-[#154be2] to-cyan-400 rounded-xl flex items-center justify-center shadow-[0_4px_16px_rgba(21,75,226,0.25)]">
             <AdvantaLogo className="size-6 text-white" />
           </div>
-          <span className="font-bold text-lg hidden lg:block tracking-tight text-[#154be2]">
+          <span
+            className={`font-bold text-lg hidden tracking-tight text-[#154be2] ${isSidebarExpanded ? "lg:block" : ""}`}
+          >
             RADAR ADVANTA
           </span>
         </div>
@@ -12101,7 +12269,7 @@ export default function App() {
             <span className="material-symbols-outlined ml-0 lg:ml-4">
               edit_note
             </span>
-            <span className="font-extrabold text-xs hidden lg:block">
+            <span className={`font-extrabold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
               Input Activity
             </span>
           </button>
@@ -12120,7 +12288,7 @@ export default function App() {
               >
                 analytics
               </span>
-              <span className="font-semibold text-xs hidden lg:block">
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
                 Executive Overview
               </span>
             </button>
@@ -12135,7 +12303,7 @@ export default function App() {
             >
               handshake
             </span>
-            <span className="font-semibold text-xs hidden lg:block">
+            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
               Data Partner
             </span>
           </button>
@@ -12149,7 +12317,7 @@ export default function App() {
             >
               donut_large
             </span>
-            <span className="font-semibold text-xs hidden lg:block">
+            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
               Stock Summary
             </span>
           </button>
@@ -12163,7 +12331,7 @@ export default function App() {
             >
               trending_up
             </span>
-            <span className="font-semibold text-xs hidden lg:block">
+            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
               POG Tracking
             </span>
           </button>
@@ -12178,7 +12346,7 @@ export default function App() {
               >
                 assignment
               </span>
-              <span className="font-semibold text-xs hidden lg:block">
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
                 Review (Temp)
               </span>
             </button>
@@ -12193,7 +12361,7 @@ export default function App() {
             <span className="material-symbols-outlined ml-0 lg:ml-4">
               logout
             </span>
-            <span className="font-semibold text-xs hidden lg:block">
+            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
               Keluar System
             </span>
           </button>
