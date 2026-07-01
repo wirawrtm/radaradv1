@@ -1076,17 +1076,17 @@ const EmployeeEditModal = ({
             />
           </div>
 
-          {/* Email */}
+          {/* Username */}
           <div>
             <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
-              Email / Username
+              Username
             </label>
             <input
               type="text"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full h-11 bg-[#fbf8ff] border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold text-[#111] outline-none transition-all"
-              placeholder="Username atau email"
+              placeholder="Masukkan username"
             />
           </div>
 
@@ -2820,6 +2820,12 @@ const Dashboard = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const getCurrentTimestamp = () => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const now = new Date();
+    return `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  };
+
   const handleAddLocal = () => {
     if (!lotNo || !qty) return;
     const cleanLot = lotNo.trim().toUpperCase();
@@ -2873,6 +2879,7 @@ const Dashboard = ({
               stock: nQty,
               condition: cond,
               user: userData.name,
+              timestamp: getCurrentTimestamp(),
               [currentMonthKey]: nQty,
             };
           }
@@ -2909,6 +2916,7 @@ const Dashboard = ({
         isNew: true,
         originalStock: Number(qty),
         user: userData.name,
+        timestamp: getCurrentTimestamp(),
         [currentMonthKey]: Number(qty),
       };
       setWorkingData((prev) => [newItem, ...prev]);
@@ -2959,6 +2967,7 @@ const Dashboard = ({
             stock: nQty,
             condition: cond,
             user: userData.name,
+            timestamp: getCurrentTimestamp(),
             [currentMonthKey]: nQty,
           };
         }
@@ -2996,6 +3005,7 @@ const Dashboard = ({
                 stock: 0,
                 condition: "habis",
                 user: userData.name,
+                timestamp: getCurrentTimestamp(),
                 [currentMonthKey]: 0,
               }
             : i,
@@ -3030,7 +3040,7 @@ const Dashboard = ({
     setIsFetchingData(true);
     setIsSyncing(true);
     try {
-      await fetch(SCRIPT_URL, {
+      const resp = await fetch(SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({
@@ -3041,6 +3051,13 @@ const Dashboard = ({
           items: currentKioskItems, // Kirim semua data yang terlihat di layer (dan yg status 'habis')
         }),
       });
+      const res = await resp.json();
+      if (res.status === "error") {
+        console.error("Batch activity failed:", res.message);
+        alert("Upload activity gagal: " + res.message);
+      } else {
+        alert("Upload activity berhasil!");
+      }
       fetchWorkingData();
     } catch (e) {
       console.warn(
@@ -8742,9 +8759,8 @@ const Dashboard = ({
             </div>
 
             {/* Sub-navigation Menu */}
-            {userLevel !== 1 && (
-              <div className="flex gap-1 p-1 bg-[#edecff]/45 rounded-full w-full md:w-auto max-w-xs md:max-w-none border border-[#edecff]/60 shadow-[inset_0_1px_2px_rgba(21,75,226,0.03)] shrink-0 self-start md:self-auto">
-                <button
+            <div className="flex gap-1 p-1 bg-[#edecff]/45 rounded-full w-full md:w-auto max-w-xs md:max-w-none border border-[#edecff]/60 shadow-[inset_0_1px_2px_rgba(21,75,226,0.03)] shrink-0 self-start md:self-auto">
+              <button
                   onClick={() => setPartnerSubTab("team")}
                   className={`flex-1 md:flex-initial px-4 py-1.5 rounded-full font-bold text-[9.5px] uppercase tracking-wider transition-all duration-200 cursor-pointer ${
                     partnerSubTab === "team"
@@ -8775,11 +8791,9 @@ const Dashboard = ({
                   </div>
                 </button>
               </div>
-            )}
           </div>
 
           {partnerSubTab === "team" &&
-            userLevel !== 1 &&
             (() => {
               const getDirectSubordinates = (parentName: string) => {
                 return teamMembers.filter((member) => {
@@ -8946,6 +8960,7 @@ const Dashboard = ({
                         </h3>
                       </div>
                       <button
+                        disabled={userLevel === 1}
                         onClick={() =>
                           setEmployeeEditModal({
                             isOpen: true,
@@ -8960,7 +8975,11 @@ const Dashboard = ({
                             },
                           })
                         }
-                        className="h-8 px-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-full font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 hover:opacity-95 transition-all shadow-md active:scale-[97%] cursor-pointer shrink-0"
+                        className={`h-8 px-4 rounded-full font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 transition-all shrink-0 ${
+                          userLevel === 1
+                            ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                            : "bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:opacity-95 shadow-md active:scale-[97%] cursor-pointer"
+                        }`}
                       >
                         <span className="material-symbols-outlined text-[13px]">
                           person_add
@@ -8969,7 +8988,7 @@ const Dashboard = ({
                       </button>
                     </div>
 
-                    {teamMembers.length > 1 ? (
+                    {teamMembers.length > 0 ? (
                       <div className="space-y-4">
                         {/* Root Level 0 (Logged In User) */}
                         <div className="flex items-start gap-3">
@@ -10699,8 +10718,12 @@ const Dashboard = ({
               const itemMonthlyQty = Array(12).fill(0);
               let hasDbMonths = false;
               monthsKeys.forEach((mName, mIdx) => {
-                if (item[mName] !== undefined && Number(item[mName]) > 0) {
-                  itemMonthlyQty[mIdx] = Number(item[mName]);
+                if (
+                  item[mName] !== undefined &&
+                  item[mName] !== null &&
+                  String(item[mName]).trim() !== ""
+                ) {
+                  itemMonthlyQty[mIdx] = Number(item[mName]) || 0;
                   hasDbMonths = true;
                 }
               });
