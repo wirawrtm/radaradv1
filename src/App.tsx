@@ -1,13 +1,49 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
-import { AdvantaLogo } from './AdvantaLogo';
-import { UserIcon } from './UserIcon';
-import * as XLSX from 'xlsx';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, PieChart, Pie, Cell, AreaChart, Area, LineChart, Line, LabelList } from 'recharts';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
+import { Html5Qrcode } from "html5-qrcode";
+import { AdvantaLogo } from "./AdvantaLogo";
+import { UserIcon } from "./UserIcon";
+import * as XLSX from "xlsx";
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  LabelList,
+} from "recharts";
 
-const SCRIPT_URL = "/api";
+const ORIGINAL_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbxUUPKhsEo-LencnYjex3gOhVl7w2tS154VCICVbqGfFSBLAwzv0P7XOu9oMTE1jTUg1g/exec";
 
-const cleanForMatch = (s: any) => String(s || '').replace(/[\s_\-\/]/g, '').toLowerCase();
+// Use the local API proxy if we're on localhost or Cloud Run, otherwise fall back to direct Apps Script for GitHub Pages
+const SCRIPT_URL =
+  (import.meta as any).env.VITE_SCRIPT_URL ||
+  (window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1" ||
+  window.location.hostname.includes("run.app")
+    ? "/api"
+    : ORIGINAL_SCRIPT_URL);
+
+const cleanForMatch = (s: any) =>
+  String(s || "")
+    .replace(/[\s_\-\/]/g, "")
+    .toLowerCase();
 
 const matchNames = (name1: any, name2: any) => {
   const c1 = cleanForMatch(name1);
@@ -18,27 +54,42 @@ const matchNames = (name1: any, name2: any) => {
 
 // Helper function for crop fuzzy matching
 const checkCropMatch = (itemCrop: string, filterCrop: string): boolean => {
-  if (!filterCrop || filterCrop === 'All') return true;
-  const ic = String(itemCrop || '').toLowerCase().trim();
-  const fc = String(filterCrop || '').toLowerCase().trim();
+  if (!filterCrop || filterCrop === "All") return true;
+  const ic = String(itemCrop || "")
+    .toLowerCase()
+    .trim();
+  const fc = String(filterCrop || "")
+    .toLowerCase()
+    .trim();
   return ic === fc;
 };
 
 const normalizePosition = (pos: string | undefined): string => {
-  if (!pos) return 'Unknown';
+  if (!pos) return "Unknown";
   const clean = cleanForMatch(pos);
-  if (clean === 'businessanalyst' || clean === 'analyst') return 'Business Analyst';
-  if (clean === 'areasalesmanager' || clean === 'asm') return 'Area Sales Manager';
-  if (clean === 'salesmanager' || clean === 'sm') return 'Sales Manager';
-  if (clean === 'salesagronomist' || clean === 'sa') return 'Sales Agronomist';
-  if (clean === 'businesssolution' || clean === 'bs') return 'Business Solution';
-  
+  if (clean === "businessanalyst" || clean === "analyst")
+    return "Business Analyst";
+  if (clean === "areasalesmanager" || clean === "asm")
+    return "Area Sales Manager";
+  if (clean === "salesmanager" || clean === "sm") return "Sales Manager";
+  if (clean === "salesagronomist" || clean === "sa") return "Sales Agronomist";
+  if (clean === "businesssolution" || clean === "bs")
+    return "Business Solution";
+
   // Custom casing logic for presentation
-  if (clean.includes('analyst')) return 'Business Analyst';
-  if (clean.includes('areasalesmanager') || clean.includes('asm')) return 'Area Sales Manager';
-  if (clean.includes('salesmanager') || clean.includes('sm')) return 'Sales Manager';
-  if (clean.includes('salesagronomist') || clean.includes('sa') || clean.includes('agronomist')) return 'Sales Agronomist';
-  if (clean.includes('businesssolution') || clean.includes('bs')) return 'Business Solution';
+  if (clean.includes("analyst")) return "Business Analyst";
+  if (clean.includes("areasalesmanager") || clean.includes("asm"))
+    return "Area Sales Manager";
+  if (clean.includes("salesmanager") || clean.includes("sm"))
+    return "Sales Manager";
+  if (
+    clean.includes("salesagronomist") ||
+    clean.includes("sa") ||
+    clean.includes("agronomist")
+  )
+    return "Sales Agronomist";
+  if (clean.includes("businesssolution") || clean.includes("bs"))
+    return "Business Solution";
   return pos;
 };
 
@@ -46,113 +97,140 @@ const getPositionRank = (pos: string | undefined): number => {
   // Hirarki Posisi (dari yang tertinggi ke terendah):
   // Business Analyst (1) -> Sales Manager (2) -> Area Sales Manager (3) -> Sales Agronomist (4) -> Business Solution (5)
   const norm = normalizePosition(pos);
-  if (norm === 'Business Analyst') return 1;
-  if (norm === 'Sales Manager') return 2;
-  if (norm === 'Area Sales Manager') return 3;
-  if (norm === 'Sales Agronomist') return 4;
-  if (norm === 'Business Solution') return 5;
+  if (norm === "Business Analyst") return 1;
+  if (norm === "Sales Manager") return 2;
+  if (norm === "Area Sales Manager") return 3;
+  if (norm === "Sales Agronomist") return 4;
+  if (norm === "Business Solution") return 5;
   return 99;
 };
 
 const parseLevelStr = (val: string | number | undefined | null): number => {
-    if (val === undefined || val === null || val === '') return NaN;
-    if (typeof val === 'number') return val;
-    const str = String(val).toUpperCase().trim();
-    // Prioritize explicit digit
-    const match = str.match(/\d+/);
-    if (match) return parseInt(match[0], 10);
-    // Explicit roman numerals as fallback
-    if (str.includes('IV')) return 4;
-    if (str.includes('III')) return 3;
-    if (str.includes('II')) return 2;
-    if (str.includes('V')) return 5;
-    if (str.includes('I')) return 1;
-    return NaN;
+  if (val === undefined || val === null || val === "") return NaN;
+  if (typeof val === "number") return val;
+  const str = String(val).toUpperCase().trim();
+  // Prioritize explicit digit
+  const match = str.match(/\d+/);
+  if (match) return parseInt(match[0], 10);
+  // Explicit roman numerals as fallback
+  if (str.includes("IV")) return 4;
+  if (str.includes("III")) return 3;
+  if (str.includes("II")) return 2;
+  if (str.includes("V")) return 5;
+  if (str.includes("I")) return 1;
+  return NaN;
 };
 
-const getFromRecord = <T,>(record: Record<string, T>, key: string | undefined): T | undefined => {
-    if (!key) return undefined;
-    const cleanKey = cleanForMatch(key);
-    let foundKey = Object.keys(record).find(k => cleanForMatch(k) === cleanKey);
-    if (!foundKey) {
-        foundKey = Object.keys(record).find(k => matchNames(k, key));
-    }
-    return foundKey ? record[foundKey] : undefined;
+const getFromRecord = <T,>(
+  record: Record<string, T>,
+  key: string | undefined,
+): T | undefined => {
+  if (!key) return undefined;
+  const cleanKey = cleanForMatch(key);
+  let foundKey = Object.keys(record).find((k) => cleanForMatch(k) === cleanKey);
+  if (!foundKey) {
+    foundKey = Object.keys(record).find((k) => matchNames(k, key));
+  }
+  return foundKey ? record[foundKey] : undefined;
 };
 
-const getMemberLevel = (name: string, teamLevels: Record<string, number>, teamPositions: Record<string, string>, userData: any): number => {
-    const cleanName = cleanForMatch(name);
-    
-    // Check if it's the logged-in user:
-    if (cleanName === cleanForMatch(userData?.name)) {
-        if (userData?.level !== undefined && userData.level !== null && String(userData.level).trim() !== '') {
-            const parsed = parseLevelStr(userData.level);
-            if (!isNaN(parsed)) return parsed;
-        }
+const getMemberLevel = (
+  name: string,
+  teamLevels: Record<string, number>,
+  teamPositions: Record<string, string>,
+  userData: any,
+): number => {
+  const cleanName = cleanForMatch(name);
+
+  // Check if it's the logged-in user:
+  if (cleanName === cleanForMatch(userData?.name)) {
+    if (
+      userData?.level !== undefined &&
+      userData.level !== null &&
+      String(userData.level).trim() !== ""
+    ) {
+      const parsed = parseLevelStr(userData.level);
+      if (!isNaN(parsed)) return parsed;
     }
-    
-    // Check teamLevels state:
-    const lvl = getFromRecord(teamLevels, name);
-    if (lvl !== undefined && lvl !== null && !isNaN(lvl)) {
-        return lvl;
+  }
+
+  // Check teamLevels state:
+  const lvl = getFromRecord(teamLevels, name);
+  if (lvl !== undefined && lvl !== null && !isNaN(lvl)) {
+    return lvl;
+  }
+
+  // If teamProfiles exists directly on userData:
+  if (userData?.teamProfiles) {
+    const foundKey = Object.keys(userData.teamProfiles).find(
+      (k) => cleanForMatch(k) === cleanName,
+    );
+    if (
+      foundKey &&
+      userData.teamProfiles[foundKey]?.level !== undefined &&
+      userData.teamProfiles[foundKey]?.level !== null &&
+      String(userData.teamProfiles[foundKey]?.level).trim() !== ""
+    ) {
+      const parsed = parseLevelStr(userData.teamProfiles[foundKey].level);
+      if (!isNaN(parsed)) return parsed;
     }
-    
-    // If teamProfiles exists directly on userData:
-    if (userData?.teamProfiles) {
-        const foundKey = Object.keys(userData.teamProfiles).find(k => cleanForMatch(k) === cleanName);
-        if (foundKey && userData.teamProfiles[foundKey]?.level !== undefined && userData.teamProfiles[foundKey]?.level !== null && String(userData.teamProfiles[foundKey]?.level).trim() !== '') {
-            const parsed = parseLevelStr(userData.teamProfiles[foundKey].level);
-            if (!isNaN(parsed)) return parsed;
-        }
-    }
-    
-    // Fallback based on position name:
-    const p = getFromRecord(teamPositions, name) || (cleanName === cleanForMatch(userData?.name) ? userData?.position : '');
-    const rank = getPositionRank(p);
-    if (rank === 1) return 5;
-    if (rank === 2) return 4;
-    if (rank === 3) return 3;
-    if (rank === 4) return 2;
-    if (rank === 5) return 1;
-    return 0;
+  }
+
+  // Fallback based on position name:
+  const p =
+    getFromRecord(teamPositions, name) ||
+    (cleanName === cleanForMatch(userData?.name) ? userData?.position : "");
+  const rank = getPositionRank(p);
+  if (rank === 1) return 5;
+  if (rank === 2) return 4;
+  if (rank === 3) return 3;
+  if (rank === 4) return 2;
+  if (rank === 5) return 1;
+  return 0;
 };
 
-const compareMembersByLevel = (a: string, b: string, teamLevels: Record<string, number>, teamPositions: Record<string, string>, userData: any): number => {
-    const lvlA = getMemberLevel(a, teamLevels, teamPositions, userData);
-    const lvlB = getMemberLevel(b, teamLevels, teamPositions, userData);
-    if (lvlA !== lvlB) {
-        return lvlB - lvlA; // Higher level (most senior) first
-    }
-    return a.localeCompare(b);
+const compareMembersByLevel = (
+  a: string,
+  b: string,
+  teamLevels: Record<string, number>,
+  teamPositions: Record<string, string>,
+  userData: any,
+): number => {
+  const lvlA = getMemberLevel(a, teamLevels, teamPositions, userData);
+  const lvlB = getMemberLevel(b, teamLevels, teamPositions, userData);
+  if (lvlA !== lvlB) {
+    return lvlB - lvlA; // Higher level (most senior) first
+  }
+  return a.localeCompare(b);
 };
 
 const getUplineInTeam = (
-    member: string, 
-    teamMembers: string[], 
-    teamUpLines: Record<string, string>
+  member: string,
+  teamMembers: string[],
+  teamUpLines: Record<string, string>,
 ): string | null => {
-    const cleanMember = cleanForMatch(member);
+  const cleanMember = cleanForMatch(member);
 
-    // 1. Follow the direct upline path recursively to find the first ancestor who is in active teamMembers
-    let currentUpline = getFromRecord(teamUpLines, member);
-    const seen = new Set<string>([cleanMember]);
-    while (currentUpline && currentUpline.trim() !== '') {
-        const cleanUp = cleanForMatch(currentUpline);
-        if (seen.has(cleanUp)) break; // Prevents circular loops
-        seen.add(cleanUp);
+  // 1. Follow the direct upline path recursively to find the first ancestor who is in active teamMembers
+  let currentUpline = getFromRecord(teamUpLines, member);
+  const seen = new Set<string>([cleanMember]);
+  while (currentUpline && currentUpline.trim() !== "") {
+    const cleanUp = cleanForMatch(currentUpline);
+    if (seen.has(cleanUp)) break; // Prevents circular loops
+    seen.add(cleanUp);
 
-        let found = teamMembers.find(tm => cleanForMatch(tm) === cleanUp);
-        if (!found) {
-            found = teamMembers.find(tm => matchNames(tm, currentUpline));
-        }
-        if (found) {
-            return found; // Direct or transitive manager found from column!
-        }
-        currentUpline = getFromRecord(teamUpLines, currentUpline);
+    let found = teamMembers.find((tm) => cleanForMatch(tm) === cleanUp);
+    if (!found) {
+      found = teamMembers.find((tm) => matchNames(tm, currentUpline));
     }
+    if (found) {
+      return found; // Direct or transitive manager found from column!
+    }
+    currentUpline = getFromRecord(teamUpLines, currentUpline);
+  }
 
-    // 2. Strict mode: if no direct/transitive upline found in active teamMembers, return null (root)
-    return null;
+  // 2. Strict mode: if no direct/transitive upline found in active teamMembers, return null (root)
+  return null;
 };
 
 const formatNum = (num) => {
@@ -160,7 +238,7 @@ const formatNum = (num) => {
   const absNum = Math.abs(num);
   let minFrac = 0;
   let maxFrac = 0;
-  
+
   if (absNum >= 100) {
     minFrac = 0;
     maxFrac = 0;
@@ -171,193 +249,254 @@ const formatNum = (num) => {
     minFrac = 2;
     maxFrac = 2;
   }
-  
-  return Number(num).toLocaleString('en-US', { minimumFractionDigits: minFrac, maximumFractionDigits: maxFrac });
+
+  return Number(num).toLocaleString("en-US", {
+    minimumFractionDigits: minFrac,
+    maximumFractionDigits: maxFrac,
+  });
 };
 
 const parseTaskDate = (timestamp: any) => {
-    if (!timestamp) return null;
-    let d;
-    if (typeof timestamp === 'string' && timestamp.includes('/')) {
-        const parts = timestamp.split(/[\s/:]+/);
-        if (parts.length >= 3) {
-            d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${parts[3]||'00'}:${parts[4]||'00'}:${parts[5]||'00'}`);
-        } else d = new Date(timestamp);
-    } else {
-        d = new Date(timestamp);
-    }
-    return d && !isNaN(d.getTime()) ? d : null;
+  if (!timestamp) return null;
+  let d;
+  if (typeof timestamp === "string" && timestamp.includes("/")) {
+    const parts = timestamp.split(/[\s/:]+/);
+    if (parts.length >= 3) {
+      d = new Date(
+        `${parts[2]}-${parts[1]}-${parts[0]}T${parts[3] || "00"}:${parts[4] || "00"}:${parts[5] || "00"}`,
+      );
+    } else d = new Date(timestamp);
+  } else {
+    d = new Date(timestamp);
+  }
+  return d && !isNaN(d.getTime()) ? d : null;
 };
 
 const depthMapCache = new Map<string, Record<string, number>>();
 
-const buildDepthMap = (rootName: string, teamProfiles: Record<string, any>): Record<string, number> => {
-    const cacheKey = `${rootName}_${Object.keys(teamProfiles || {}).length}`;
-    if (depthMapCache.has(cacheKey)) {
-        return depthMapCache.get(cacheKey)!;
-    }
-    const depths: Record<string, number> = {};
-    const cleanRoot = cleanForMatch(rootName);
-    
-    // Find if there's a profile in teamProfiles that matches the rootName by name or by key or email
-    let realRootName = rootName;
-    const foundProfileKey = Object.keys(teamProfiles).find(k => 
-        cleanForMatch(k) === cleanRoot || (teamProfiles[k]?.email && cleanForMatch(teamProfiles[k].email) === cleanRoot)
-    );
-    if (foundProfileKey) {
-        realRootName = foundProfileKey;
-    }
-    const cleanRealRoot = cleanForMatch(realRootName);
-    
-    depths[cleanRealRoot] = 0;
-    if (cleanRoot !== cleanRealRoot) {
-        depths[cleanRoot] = 0;
-    }
+const buildDepthMap = (
+  rootName: string,
+  teamProfiles: Record<string, any>,
+): Record<string, number> => {
+  const cacheKey = `${rootName}_${Object.keys(teamProfiles || {}).length}`;
+  if (depthMapCache.has(cacheKey)) {
+    return depthMapCache.get(cacheKey)!;
+  }
+  const depths: Record<string, number> = {};
+  const cleanRoot = cleanForMatch(rootName);
 
-    const queue: string[] = [cleanRealRoot];
-    const visited = new Set<string>([cleanRealRoot]);
+  // Find if there's a profile in teamProfiles that matches the rootName by name or by key or email
+  let realRootName = rootName;
+  const foundProfileKey = Object.keys(teamProfiles).find(
+    (k) =>
+      cleanForMatch(k) === cleanRoot ||
+      (teamProfiles[k]?.email &&
+        cleanForMatch(teamProfiles[k].email) === cleanRoot),
+  );
+  if (foundProfileKey) {
+    realRootName = foundProfileKey;
+  }
+  const cleanRealRoot = cleanForMatch(realRootName);
 
-    while (queue.length > 0) {
-        const currentClean = queue.shift()!;
-        const currentDepth = depths[currentClean];
+  depths[cleanRealRoot] = 0;
+  if (cleanRoot !== cleanRealRoot) {
+    depths[cleanRoot] = 0;
+  }
 
-        Object.entries(teamProfiles).forEach(([name, p]: [string, any]) => {
-            const cleanName = cleanForMatch(name);
-            if (cleanName === cleanRealRoot || cleanName === cleanRoot) return;
-            const cleanUpline = cleanForMatch(p.upline || '');
-            if (cleanUpline === currentClean && !visited.has(cleanName)) {
-                visited.add(cleanName);
-                depths[cleanName] = currentDepth + 1;
-                queue.push(cleanName);
-            }
-        });
-    }
+  const queue: string[] = [cleanRealRoot];
+  const visited = new Set<string>([cleanRealRoot]);
 
-    // For any remaining nodes in teamProfiles, try to traverse up their upline to determine depth.
-    Object.entries(teamProfiles).forEach(([name]) => {
-        const cleanName = cleanForMatch(name);
-        if (depths[cleanName] === undefined) {
-            let current = cleanName;
-            let climbVisited = new Set<string>();
-            let path: string[] = [];
-            while (current && current !== cleanRealRoot && current !== cleanRoot && !climbVisited.has(current)) {
-                climbVisited.add(current);
-                path.push(current);
-                const currentProfile = Object.values(teamProfiles).find((prof: any) => cleanForMatch(prof.name) === current) as any;
-                if (currentProfile && currentProfile.upline) {
-                    current = cleanForMatch(currentProfile.upline);
-                } else {
-                    break;
-                }
-            }
-            if (current === cleanRealRoot || current === cleanRoot) {
-                for (let i = 0; i < path.length; i++) {
-                    const node = path[i];
-                    depths[node] = path.length - i;
-                }
-            } else {
-                depths[cleanName] = 99;
-            }
-        }
+  while (queue.length > 0) {
+    const currentClean = queue.shift()!;
+    const currentDepth = depths[currentClean];
+
+    Object.entries(teamProfiles).forEach(([name, p]: [string, any]) => {
+      const cleanName = cleanForMatch(name);
+      if (cleanName === cleanRealRoot || cleanName === cleanRoot) return;
+      const cleanUpline = cleanForMatch(p.upline || "");
+      if (cleanUpline === currentClean && !visited.has(cleanName)) {
+        visited.add(cleanName);
+        depths[cleanName] = currentDepth + 1;
+        queue.push(cleanName);
+      }
     });
+  }
 
-    depthMapCache.set(cacheKey, depths);
-    return depths;
+  // For any remaining nodes in teamProfiles, try to traverse up their upline to determine depth.
+  Object.entries(teamProfiles).forEach(([name]) => {
+    const cleanName = cleanForMatch(name);
+    if (depths[cleanName] === undefined) {
+      let current = cleanName;
+      let climbVisited = new Set<string>();
+      let path: string[] = [];
+      while (
+        current &&
+        current !== cleanRealRoot &&
+        current !== cleanRoot &&
+        !climbVisited.has(current)
+      ) {
+        climbVisited.add(current);
+        path.push(current);
+        const currentProfile = Object.values(teamProfiles).find(
+          (prof: any) => cleanForMatch(prof.name) === current,
+        ) as any;
+        if (currentProfile && currentProfile.upline) {
+          current = cleanForMatch(currentProfile.upline);
+        } else {
+          break;
+        }
+      }
+      if (current === cleanRealRoot || current === cleanRoot) {
+        for (let i = 0; i < path.length; i++) {
+          const node = path[i];
+          depths[node] = path.length - i;
+        }
+      } else {
+        depths[cleanName] = 99;
+      }
+    }
+  });
+
+  depthMapCache.set(cacheKey, depths);
+  return depths;
 };
 
 const getDdaOfUserCache = new Map<string, string>();
 
-const getDdaOfUser = (picName: string, rootName: string | undefined, teamProfiles: Record<string, any> | undefined): string => {
-    if (!rootName || !teamProfiles) return picName;
-    const cleanPic = cleanForMatch(picName);
-    const cleanRoot = cleanForMatch(rootName);
-    if (!cleanPic || cleanPic === 'unknown') return picName;
+const getDdaOfUser = (
+  picName: string,
+  rootName: string | undefined,
+  teamProfiles: Record<string, any> | undefined,
+): string => {
+  if (!rootName || !teamProfiles) return picName;
+  const cleanPic = cleanForMatch(picName);
+  const cleanRoot = cleanForMatch(rootName);
+  if (!cleanPic || cleanPic === "unknown") return picName;
 
-    const cacheKey = `${cleanPic}_${cleanRoot}_${Object.keys(teamProfiles).length}`;
-    if (getDdaOfUserCache.has(cacheKey)) {
-        return getDdaOfUserCache.get(cacheKey)!;
+  const cacheKey = `${cleanPic}_${cleanRoot}_${Object.keys(teamProfiles).length}`;
+  if (getDdaOfUserCache.has(cacheKey)) {
+    return getDdaOfUserCache.get(cacheKey)!;
+  }
+
+  const calculate = (): string => {
+    let realRootName = rootName;
+    const foundProfileKey = Object.keys(teamProfiles).find(
+      (k) =>
+        cleanForMatch(k) === cleanRoot ||
+        (teamProfiles[k]?.email &&
+          cleanForMatch(teamProfiles[k].email) === cleanRoot),
+    );
+    if (foundProfileKey) {
+      realRootName = foundProfileKey;
+    }
+    const cleanRealRoot = cleanForMatch(realRootName);
+
+    const rootProfile = Object.values(teamProfiles).find(
+      (p: any) => cleanForMatch(p.name) === cleanRealRoot,
+    ) as any;
+    const rootPos = rootProfile?.position || "";
+    const isBusinessAnalyst =
+      cleanForMatch(rootPos) === "businessanalyst" ||
+      cleanRealRoot === "adityawiratama" ||
+      cleanRoot === "adityawiratama" ||
+      cleanRealRoot === "aditya" ||
+      cleanRoot === "aditya";
+
+    if (isBusinessAnalyst) {
+      return picName;
     }
 
-    const calculate = (): string => {
-        let realRootName = rootName;
-        const foundProfileKey = Object.keys(teamProfiles).find(k => 
-            cleanForMatch(k) === cleanRoot || (teamProfiles[k]?.email && cleanForMatch(teamProfiles[k].email) === cleanRoot)
+    const maxThreshold = 5;
+
+    const depths = { ...buildDepthMap(realRootName, teamProfiles) };
+
+    // Also tag depths for the direct root alias so it functions correctly
+    depths[cleanRoot] = 0;
+
+    if ((depths[cleanPic] ?? 99) <= maxThreshold) {
+      const matched = Object.keys(teamProfiles).find(
+        (k) => cleanForMatch(k) === cleanPic,
+      );
+      return matched || picName;
+    }
+
+    let current = cleanPic;
+    let visited = new Set<string>();
+
+    while (current && current !== cleanRealRoot && current !== cleanRoot) {
+      if (visited.has(current)) break;
+      visited.add(current);
+
+      const profile = Object.values(teamProfiles).find(
+        (p: any) => cleanForMatch(p.name) === current,
+      ) as any;
+      if (!profile || !profile.upline) break;
+
+      const parentClean = cleanForMatch(profile.upline);
+      const parentDepth = depths[parentClean] ?? 99;
+
+      if (parentDepth <= maxThreshold) {
+        const matched = Object.keys(teamProfiles).find(
+          (k) => cleanForMatch(k) === parentClean,
         );
-        if (foundProfileKey) {
-            realRootName = foundProfileKey;
-        }
-        const cleanRealRoot = cleanForMatch(realRootName);
+        return matched || profile.upline;
+      }
 
-        const rootProfile = Object.values(teamProfiles).find((p: any) => cleanForMatch(p.name) === cleanRealRoot) as any;
-        const rootPos = rootProfile?.position || '';
-        const isBusinessAnalyst = cleanForMatch(rootPos) === 'businessanalyst' || cleanRealRoot === 'adityawiratama' || cleanRoot === 'adityawiratama' || cleanRealRoot === 'aditya' || cleanRoot === 'aditya';
-        
-        if (isBusinessAnalyst) {
-            return picName;
-        }
+      current = parentClean;
+    }
 
-        const maxThreshold = 5;
+    return realRootName;
+  };
 
-        const depths = { ...buildDepthMap(realRootName, teamProfiles) };
-        
-        // Also tag depths for the direct root alias so it functions correctly
-        depths[cleanRoot] = 0;
-        
-        if ((depths[cleanPic] ?? 99) <= maxThreshold) {
-            const matched = Object.keys(teamProfiles).find(k => cleanForMatch(k) === cleanPic);
-            return matched || picName;
-        }
-
-        let current = cleanPic;
-        let visited = new Set<string>();
-
-        while (current && current !== cleanRealRoot && current !== cleanRoot) {
-            if (visited.has(current)) break;
-            visited.add(current);
-
-            const profile = Object.values(teamProfiles).find((p: any) => cleanForMatch(p.name) === current) as any;
-            if (!profile || !profile.upline) break;
-
-            const parentClean = cleanForMatch(profile.upline);
-            const parentDepth = depths[parentClean] ?? 99;
-
-            if (parentDepth <= maxThreshold) {
-                const matched = Object.keys(teamProfiles).find(k => cleanForMatch(k) === parentClean);
-                return matched || profile.upline;
-            }
-
-            current = parentClean;
-        }
-
-        return realRootName;
-    };
-
-    const result = calculate();
-    getDdaOfUserCache.set(cacheKey, result);
-    return result;
+  const result = calculate();
+  getDdaOfUserCache.set(cacheKey, result);
+  return result;
 };
 
-
 const EditModal = ({ isOpen, onClose, item, onSave, isSaving }) => {
-  const [newQty, setNewQty] = useState('');
-  useEffect(() => { if (item) setNewQty(item.stock); }, [item]);
+  const [newQty, setNewQty] = useState("");
+  useEffect(() => {
+    if (item) setNewQty(item.stock);
+  }, [item]);
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-[340px] rounded-[24px] p-8 shadow-2xl border border-[#edecff] animate-in fade-in zoom-in-95 duration-200">
         <div className="size-14 bg-[#edecff] rounded-full flex items-center justify-center text-primary mb-5">
-          <span className="material-symbols-outlined text-[28px]">edit_note</span>
+          <span className="material-symbols-outlined text-[28px]">
+            edit_note
+          </span>
         </div>
-        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">Edit Quantity</h2>
-        <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mb-5">Update stock for Batch: {item?.lot}</p>
+        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">
+          Edit Quantity
+        </h2>
+        <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mb-5">
+          Update stock for Batch: {item?.lot}
+        </p>
         <div className="relative mb-6">
-          <input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} className="w-full h-14 bg-[#fbf8ff] border border-[#edecff] rounded-full px-6 font-semibold text-lg text-primary outline-none focus:border-primary focus:bg-white transition-all shadow-sm" />
-          <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#8E94B7] uppercase">Kg</span>
+          <input
+            type="number"
+            value={newQty}
+            onChange={(e) => setNewQty(e.target.value)}
+            className="w-full h-14 bg-[#fbf8ff] border border-[#edecff] rounded-full px-6 font-semibold text-lg text-primary outline-none focus:border-primary focus:bg-white transition-all shadow-sm"
+          />
+          <span className="absolute right-6 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#8E94B7] uppercase">
+            Kg
+          </span>
         </div>
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors">Batal</button>
-          <button onClick={() => onSave(item.id, newQty)} disabled={isSaving} className="flex-[2] py-3 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full font-semibold text-xs uppercase tracking-wider shadow-[0_4px_12px_rgba(21,75,226,0.2)] active:scale-[0.98] transition-all">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            onClick={() => onSave(item.id, newQty)}
+            disabled={isSaving}
+            className="flex-[2] py-3 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full font-semibold text-xs uppercase tracking-wider shadow-[0_4px_12px_rgba(21,75,226,0.2)] active:scale-[0.98] transition-all"
+          >
             {isSaving ? "Saving..." : "Simpan"}
           </button>
         </div>
@@ -371,12 +510,31 @@ const ConfirmModal = ({ isOpen, onClose, onConfirm, isProcessing }) => {
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-[340px] rounded-[24px] p-8 shadow-2xl border border-[#edecff] text-center animate-in fade-in zoom-in-95 duration-200">
-        <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5"><span className="material-symbols-outlined text-[32px]">priority_high</span></div>
-        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">Konfirmasi Hapus</h2>
-        <p className="text-xs font-semibold text-[#8E94B7] uppercase tracking-wider mb-6">Anda yakin ingin menghapus LOT ini?</p>
+        <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5">
+          <span className="material-symbols-outlined text-[32px]">
+            priority_high
+          </span>
+        </div>
+        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">
+          Konfirmasi Hapus
+        </h2>
+        <p className="text-xs font-semibold text-[#8E94B7] uppercase tracking-wider mb-6">
+          Anda yakin ingin menghapus LOT ini?
+        </p>
         <div className="space-y-2">
-          <button onClick={onConfirm} disabled={isProcessing} className="w-full py-3 bg-gradient-to-r from-[#ba1a1a] to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md">{isProcessing ? "Processing..." : "Ya, Hapus Data"}</button>
-          <button onClick={onClose} className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors">Batal</button>
+          <button
+            onClick={onConfirm}
+            disabled={isProcessing}
+            className="w-full py-3 bg-gradient-to-r from-[#ba1a1a] to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md"
+          >
+            {isProcessing ? "Processing..." : "Ya, Hapus Data"}
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors"
+          >
+            Batal
+          </button>
         </div>
       </div>
     </div>
@@ -389,19 +547,25 @@ const LogoutConfirmModal = ({ isOpen, onClose, onConfirm }) => {
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-[340px] rounded-[24px] p-8 shadow-2xl border border-[#edecff] text-center animate-in fade-in zoom-in-95 duration-200">
         <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5">
-          <span className="material-symbols-outlined text-[32px] text-red-500">logout</span>
+          <span className="material-symbols-outlined text-[32px] text-red-500">
+            logout
+          </span>
         </div>
-        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">Konfirmasi Keluar</h2>
-        <p className="text-xs font-semibold text-[#8E94B7] uppercase tracking-wider mb-6">Apakah Anda yakin ingin keluar dari aplikasi?</p>
+        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">
+          Konfirmasi Keluar
+        </h2>
+        <p className="text-xs font-semibold text-[#8E94B7] uppercase tracking-wider mb-6">
+          Apakah Anda yakin ingin keluar dari aplikasi?
+        </p>
         <div className="space-y-2">
-          <button 
-            onClick={onConfirm} 
+          <button
+            onClick={onConfirm}
             className="w-full py-3 bg-gradient-to-r from-red-600 to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md cursor-pointer"
           >
             Ya, Keluar
           </button>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors cursor-pointer"
           >
             Batal
@@ -414,7 +578,9 @@ const LogoutConfirmModal = ({ isOpen, onClose, onConfirm }) => {
 
 const playBeep = () => {
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const ctx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "sine";
@@ -447,7 +613,7 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
       try {
         html5QrCode = new Html5Qrcode("qr-camera-stream");
         scannerRef.current = html5QrCode;
-        
+
         await html5QrCode.start(
           { facingMode: "environment" },
           {
@@ -455,7 +621,7 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
             qrbox: (width, height) => {
               const size = Math.min(width, height) * 0.95;
               return { width: size, height: size };
-            }
+            },
           },
           (decodedText) => {
             playBeep();
@@ -464,12 +630,14 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
           },
           () => {
             // silent frame error check
-          }
+          },
         );
         isScanningActive = true;
       } catch (err) {
         console.error("Camera access error:", err);
-        setScannerError("Gagal mengakses kamera. Mohon berikan izin kamera pada browser Anda.");
+        setScannerError(
+          "Gagal mengakses kamera. Mohon berikan izin kamera pada browser Anda.",
+        );
       }
     };
 
@@ -510,20 +678,27 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
         }
       `}</style>
       <div className="bg-white w-full max-w-[340px] rounded-[32px] overflow-hidden shadow-[0_24px_64px_rgba(24,26,44,0.12)] border border-[#f0edff] p-6 flex flex-col items-center relative animate-in fade-in zoom-in-95 duration-250">
-        <button 
+        <button
           onClick={onClose}
           className="absolute top-4 right-4 size-8 rounded-full bg-[#f4f2ff] text-[#8E94B7] hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center cursor-pointer z-10"
         >
           <span className="material-symbols-outlined text-lg">close</span>
         </button>
 
-        <h3 className="text-base font-bold text-[#181a2c] tracking-wide mb-1 mt-2 text-center">Pindai QR / Barcode</h3>
-        <p className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider text-center mb-6">Arahkan kamera ke kode LOT</p>
+        <h3 className="text-base font-bold text-[#181a2c] tracking-wide mb-1 mt-2 text-center">
+          Pindai QR / Barcode
+        </h3>
+        <p className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider text-center mb-6">
+          Arahkan kamera ke kode LOT
+        </p>
 
         {/* Thick elegant gradient container matching the website's theme */}
         <div className="relative w-full aspect-square max-w-[260px] p-[10px] rounded-[44px] bg-gradient-to-br from-primary to-cyan-400 shadow-[0_20px_48px_rgba(21,75,226,0.22)] flex items-center justify-center">
           <div className="w-full h-full bg-white rounded-[34px] p-[12px] flex items-center justify-center relative overflow-hidden">
-            <div id="qr-camera-stream" className="w-full h-full object-cover rounded-[22px] overflow-hidden bg-slate-950"></div>
+            <div
+              id="qr-camera-stream"
+              className="w-full h-full object-cover rounded-[22px] overflow-hidden bg-slate-950"
+            ></div>
 
             {!scannerError && (
               <div className="absolute inset-[16px] pointer-events-none flex items-center justify-center z-10">
@@ -532,26 +707,30 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
                 <div className="absolute top-0 right-0 w-5 h-5 border-t-[3px] border-r-[3px] border-primary rounded-tr-md"></div>
                 <div className="absolute bottom-0 left-0 w-5 h-5 border-b-[3px] border-l-[3px] border-cyan-400 rounded-bl-md"></div>
                 <div className="absolute bottom-0 right-0 w-5 h-5 border-b-[3px] border-r-[3px] border-cyan-400 rounded-br-md"></div>
-                
+
                 {/* Scanning laser line in matching gradient */}
-                <div 
-                  className="w-[95%] h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent opacity-85 absolute animate-bounce" 
-                  style={{ top: '15%', animationDuration: '2.5s' }}
+                <div
+                  className="w-[95%] h-0.5 bg-gradient-to-r from-transparent via-primary to-transparent opacity-85 absolute animate-bounce"
+                  style={{ top: "15%", animationDuration: "2.5s" }}
                 ></div>
               </div>
             )}
 
             {scannerError && (
               <div className="absolute inset-0 bg-slate-950 text-white flex flex-col items-center justify-center p-4 text-center rounded-[22px] overflow-hidden">
-                <span className="material-symbols-outlined text-red-500 text-3xl mb-2">videocam_off</span>
-                <p className="text-[11px] font-semibold select-none leading-relaxed text-slate-300">{scannerError}</p>
+                <span className="material-symbols-outlined text-red-500 text-3xl mb-2">
+                  videocam_off
+                </span>
+                <p className="text-[11px] font-semibold select-none leading-relaxed text-slate-300">
+                  {scannerError}
+                </p>
               </div>
             )}
           </div>
         </div>
 
         <div className="mt-6 w-full">
-          <button 
+          <button
             type="button"
             onClick={onClose}
             className="w-full h-11 bg-[#f4f2ff] hover:bg-[#edecff] text-[#8E94B7] hover:text-[#181a2c] rounded-full font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
@@ -564,18 +743,30 @@ const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
   );
 };
 
-const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePics, allCategories }) => {
-  const [newPic, setNewPic] = useState('');
-  const [partnerName, setPartnerName] = useState('');
-  const [category, setCategory] = useState('');
+const PartnerEditModal = ({
+  isOpen,
+  onClose,
+  item,
+  onSave,
+  isSaving,
+  availablePics,
+  allCategories,
+}) => {
+  const [newPic, setNewPic] = useState("");
+  const [partnerName, setPartnerName] = useState("");
+  const [category, setCategory] = useState("");
 
   const categoriesToDisplay = useMemo(() => {
-    const defaultCategories = ['Distributor', 'R1', 'R2'];
+    const defaultCategories = ["Distributor", "R1", "R2"];
     const merged = [...defaultCategories];
     if (allCategories && Array.isArray(allCategories)) {
-      allCategories.forEach(cat => {
-        const trimmed = String(cat || '').trim();
-        if (trimmed && trimmed !== 'Uncategorized' && !merged.some(m => m.toLowerCase() === trimmed.toLowerCase())) {
+      allCategories.forEach((cat) => {
+        const trimmed = String(cat || "").trim();
+        if (
+          trimmed &&
+          trimmed !== "Uncategorized" &&
+          !merged.some((m) => m.toLowerCase() === trimmed.toLowerCase())
+        ) {
           merged.push(trimmed);
         }
       });
@@ -585,9 +776,9 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
 
   useEffect(() => {
     if (item) {
-      setNewPic(String(item.pic || '').trim());
-      setPartnerName(String(item.name || '').trim());
-      setCategory(String(item.category || '').trim());
+      setNewPic(String(item.pic || "").trim());
+      setPartnerName(String(item.name || "").trim());
+      setCategory(String(item.category || "").trim());
     }
   }, [item]);
 
@@ -599,7 +790,7 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
     onSave(isAdd ? null : item.id, newPic, {
       isAdd,
       name: partnerName,
-      category: category
+      category: category,
     });
   };
 
@@ -620,7 +811,9 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
 
         <div className="space-y-4 mb-6">
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Nama Partner</label>
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Nama Partner
+            </label>
             <input
               type="text"
               value={partnerName}
@@ -632,7 +825,9 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
           </div>
 
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Kategori Partner</label>
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Kategori Partner
+            </label>
             <div className="relative">
               <select
                 value={category}
@@ -642,36 +837,51 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
               >
                 <option value="">-- Pilih Kategori --</option>
                 {categoriesToDisplay.map((cat, idx) => (
-                  <option key={idx} value={cat}>{cat}</option>
+                  <option key={idx} value={cat}>
+                    {cat}
+                  </option>
                 ))}
               </select>
-              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">expand_more</span>
+              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">
+                expand_more
+              </span>
             </div>
           </div>
 
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">PIC / Penanggung Jawab</label>
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              PIC / Penanggung Jawab
+            </label>
             <div className="relative">
-              <select 
-                value={newPic} 
-                onChange={(e) => setNewPic(e.target.value)} 
+              <select
+                value={newPic}
+                onChange={(e) => setNewPic(e.target.value)}
                 className="w-full h-12 bg-[#fbf8ff] border border-[#edecff] rounded-full px-5 font-semibold text-xs text-[#111] outline-none focus:border-primary transition-all appearance-none pr-10"
               >
                 <option value="">-- Tanpa PIC --</option>
                 {availablePics?.map((picName, idx) => (
-                  <option key={idx} value={picName}>{picName}</option>
+                  <option key={idx} value={picName}>
+                    {picName}
+                  </option>
                 ))}
               </select>
-              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">expand_more</span>
+              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">
+                expand_more
+              </span>
             </div>
           </div>
         </div>
 
         <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors">Batal</button>
-          <button 
-            onClick={handleSave} 
-            disabled={isSaving || !partnerName.trim() || !category.trim()} 
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !partnerName.trim() || !category.trim()}
             className="flex-[2] py-3 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full font-semibold text-xs uppercase tracking-wider shadow-[0_4px_12px_rgba(21,75,226,0.25)] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSaving ? "Saving..." : "Simpan"}
@@ -682,36 +892,76 @@ const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePi
   );
 };
 
-const PartnerDeleteModal = ({ isOpen, onClose, onConfirm, isProcessing, itemName }) => {
+const PartnerDeleteModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  isProcessing,
+  itemName,
+}) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-[340px] rounded-[24px] p-8 shadow-2xl border border-[#edecff] text-center animate-in fade-in zoom-in-95 duration-200">
-        <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5"><span className="material-symbols-outlined text-[32px]">delete_forever</span></div>
-        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">Hapus Partner</h2>
-        <p className="text-xs font-semibold text-[#181a2c] mb-6">Hapus partner <span className="font-bold text-red-700">{itemName}</span> dari database?</p>
+        <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5">
+          <span className="material-symbols-outlined text-[32px]">
+            delete_forever
+          </span>
+        </div>
+        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">
+          Hapus Partner
+        </h2>
+        <p className="text-xs font-semibold text-[#181a2c] mb-6">
+          Hapus partner{" "}
+          <span className="font-bold text-red-700">{itemName}</span> dari
+          database?
+        </p>
         <div className="space-y-2">
-          <button onClick={onConfirm} disabled={isProcessing} className="w-full py-3 bg-gradient-to-r from-[#ba1a1a] to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md">{isProcessing ? "Processing..." : "Ya, Hapus"}</button>
-          <button onClick={onClose} className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors">Batal</button>
+          <button
+            onClick={onConfirm}
+            disabled={isProcessing}
+            className="w-full py-3 bg-gradient-to-r from-[#ba1a1a] to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md"
+          >
+            {isProcessing ? "Processing..." : "Ya, Hapus"}
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors"
+          >
+            Batal
+          </button>
         </div>
       </div>
     </div>
   );
 };
 
-const EmployeeEditModal = ({ isOpen, onClose, item, onSave, isSaving, allEmployeeNames, userData, allProvinces }) => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [position, setPosition] = useState('');
-  const [province, setProvince] = useState('');
-  const [password, setPassword] = useState('');
-  const [upline, setUpline] = useState('');
+const EmployeeEditModal = ({
+  isOpen,
+  onClose,
+  item,
+  onSave,
+  isSaving,
+  allEmployeeNames,
+  userData,
+  allProvinces,
+}) => {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [position, setPosition] = useState("");
+  const [province, setProvince] = useState("");
+  const [password, setPassword] = useState("");
+  const [upline, setUpline] = useState("");
 
   const isAdd = !!item?.isAdd;
 
   const userLevel = useMemo(() => {
     if (!userData) return 0;
-    if (userData.level !== undefined && userData.level !== null && String(userData.level).trim() !== '') {
+    if (
+      userData.level !== undefined &&
+      userData.level !== null &&
+      String(userData.level).trim() !== ""
+    ) {
       const parsed = parseLevelStr(userData.level);
       if (!isNaN(parsed)) return parsed;
     }
@@ -728,17 +978,17 @@ const EmployeeEditModal = ({ isOpen, onClose, item, onSave, isSaving, allEmploye
 
   useEffect(() => {
     if (item) {
-      setName(String(item.name || ''));
-      setEmail(String(item.email || ''));
-      setPassword(String(item.password || ''));
-      setUpline(String(item.upline || ''));
+      setName(String(item.name || ""));
+      setEmail(String(item.email || ""));
+      setPassword(String(item.password || ""));
+      setUpline(String(item.upline || ""));
 
       if (isAdd && userLevel === 2) {
-        setPosition('Business Solution');
-        setProvince(String(userData?.province || '').trim() || '-');
+        setPosition("Business Solution");
+        setProvince(String(userData?.province || "").trim() || "-");
       } else {
-        setPosition(String(item.position || ''));
-        setProvince(String(item.province || ''));
+        setPosition(String(item.position || ""));
+        setProvince(String(item.province || ""));
       }
     }
   }, [item, isAdd, userLevel, userData]);
@@ -749,51 +999,77 @@ const EmployeeEditModal = ({ isOpen, onClose, item, onSave, isSaving, allEmploye
     e.preventDefault();
     if (!name.trim()) return;
     const levelVal = getPositionRank(position);
-    onSave(isAdd ? '' : (item?.name || ''), {
-      name,
-      email,
-      position,
-      province,
-      password,
-      upline: upline || userData?.name,
-      level: levelVal,
-      group: userData?.group || 'Advanta',
-    }, isAdd);
+    onSave(
+      isAdd ? "" : item?.name || "",
+      {
+        name,
+        email,
+        position,
+        province,
+        password,
+        upline: upline || userData?.name,
+        level: levelVal,
+        group: userData?.group || "Advanta",
+      },
+      isAdd,
+    );
   };
 
-  const isSelf = !isAdd && !!(userData?.name && item?.name && String(userData.name).toLowerCase().trim() === String(item.name).toLowerCase().trim());
+  const isSelf =
+    !isAdd &&
+    !!(
+      userData?.name &&
+      item?.name &&
+      String(userData.name).toLowerCase().trim() ===
+        String(item.name).toLowerCase().trim()
+    );
 
-  const loggedInRank = getPositionRank(userData?.position || '');
-  const positions = ['Area Sales Manager', 'Sales Agronomist', 'Business Analyst', 'Sales Manager', 'Business Solution'].filter(p => {
-    if (item && normalizePosition(item.position) === normalizePosition(p)) return true;
+  const loggedInRank = getPositionRank(userData?.position || "");
+  const positions = [
+    "Area Sales Manager",
+    "Sales Agronomist",
+    "Business Analyst",
+    "Sales Manager",
+    "Business Solution",
+  ].filter((p) => {
+    if (item && normalizePosition(item.position) === normalizePosition(p))
+      return true;
     return getPositionRank(p) > loggedInRank;
   });
 
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-white w-full max-w-[400px] max-h-[85vh] rounded-[28px] shadow-2xl border border-[#edecff] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        
         {/* Header */}
         <div className="p-6 pb-4 border-b border-[#edecff] flex items-center gap-3 bg-white">
           <div className="size-11 bg-primary/10 rounded-full flex items-center justify-center text-primary">
-            <span className="material-symbols-outlined text-[22px]">{isAdd ? "person_add" : "face"}</span>
+            <span className="material-symbols-outlined text-[22px]">
+              {isAdd ? "person_add" : "face"}
+            </span>
           </div>
           <div>
-            <h2 className="text-base font-bold text-[#181a2c] leading-tight">{isAdd ? "Tambah Karyawan Baru" : "Edit Detail Karyawan"}</h2>
-            <p className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider mt-0.5">{isAdd ? "Anggota Tim" : `${item?.name} ${isSelf ? "(Anda)" : ""}`}</p>
+            <h2 className="text-base font-bold text-[#181a2c] leading-tight">
+              {isAdd ? "Tambah Karyawan Baru" : "Edit Detail Karyawan"}
+            </h2>
+            <p className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider mt-0.5">
+              {isAdd
+                ? "Anggota Tim"
+                : `${item?.name} ${isSelf ? "(Anda)" : ""}`}
+            </p>
           </div>
         </div>
 
         {/* Scrollable Form */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-white">
-          
           {/* Nama */}
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Nama Lengkap</label>
-            <input 
-              type="text" 
-              value={name} 
-              onChange={(e) => setName(e.target.value)} 
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Nama Lengkap
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               required
               className="w-full h-11 bg-[#fbf8ff] border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold text-[#111] outline-none transition-all"
               placeholder="Masukkan nama"
@@ -802,11 +1078,13 @@ const EmployeeEditModal = ({ isOpen, onClose, item, onSave, isSaving, allEmploye
 
           {/* Email */}
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Email / Username</label>
-            <input 
-              type="text" 
-              value={email} 
-              onChange={(e) => setEmail(e.target.value)} 
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Email / Username
+            </label>
+            <input
+              type="text"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full h-11 bg-[#fbf8ff] border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold text-[#111] outline-none transition-all"
               placeholder="Username atau email"
             />
@@ -814,100 +1092,128 @@ const EmployeeEditModal = ({ isOpen, onClose, item, onSave, isSaving, allEmploye
 
           {/* Jabatan / Posisi */}
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Posisi / Jabatan</label>
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Posisi / Jabatan
+            </label>
             <div className="relative">
-              <select 
-                value={position} 
-                onChange={(e) => setPosition(e.target.value)} 
+              <select
+                value={position}
+                onChange={(e) => setPosition(e.target.value)}
                 disabled={isSelf || isLoginLevel2}
-                className={`w-full h-11 border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold outline-none transition-all appearance-none pr-10 ${(isSelf || isLoginLevel2) ? 'bg-slate-100 text-[#8E94B7] cursor-not-allowed opacity-80' : 'bg-[#fbf8ff] text-[#111]'}`}
+                className={`w-full h-11 border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold outline-none transition-all appearance-none pr-10 ${isSelf || isLoginLevel2 ? "bg-slate-100 text-[#8E94B7] cursor-not-allowed opacity-80" : "bg-[#fbf8ff] text-[#111]"}`}
               >
                 <option value="">-- Pilih Posisi --</option>
-                {positions.map(p => (<option key={p} value={p}>{p}</option>))}
+                {positions.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
               </select>
-              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">expand_more</span>
+              <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">
+                expand_more
+              </span>
             </div>
           </div>
 
           {/* Provinsi */}
           {!isLoginLevel2 && (
             <div>
-              <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Provinsi</label>
+              <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+                Provinsi
+              </label>
               <div className="relative">
-                <select 
-                  value={province} 
-                  onChange={(e) => setProvince(e.target.value)} 
+                <select
+                  value={province}
+                  onChange={(e) => setProvince(e.target.value)}
                   disabled={isSelf}
-                  className={`w-full h-11 border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold outline-none transition-all appearance-none pr-10 ${isSelf ? 'bg-slate-100 text-[#8E94B7] cursor-not-allowed opacity-80' : 'bg-[#fbf8ff] text-[#111]'}`}
+                  className={`w-full h-11 border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold outline-none transition-all appearance-none pr-10 ${isSelf ? "bg-slate-100 text-[#8E94B7] cursor-not-allowed opacity-80" : "bg-[#fbf8ff] text-[#111]"}`}
                 >
                   <option value="">-- Pilih Provinsi --</option>
-                  {(allProvinces || []).map(p => (
-                    <option key={p} value={p}>{p}</option>
+                  {(allProvinces || []).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
                   ))}
                 </select>
-                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">expand_more</span>
+                <span className="material-symbols-outlined absolute right-4 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none text-lg">
+                  expand_more
+                </span>
               </div>
             </div>
           )}
 
           {/* Password */}
           <div>
-            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">Password Akun</label>
-            <input 
-              type="text" 
-              value={password} 
-              onChange={(e) => setPassword(e.target.value)} 
+            <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wider ml-1 mb-1.5 block">
+              Password Akun
+            </label>
+            <input
+              type="text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full h-11 bg-[#fbf8ff] border border-[#edecff] focus:border-primary focus:ring-1 focus:ring-primary/10 rounded-full px-4 text-xs font-semibold text-[#111] outline-none transition-all"
               placeholder="Password login"
             />
           </div>
-
         </div>
 
         {/* Action Buttons */}
         <div className="p-6 border-t border-[#edecff] flex gap-3 bg-slate-50/50">
-          <button 
-            type="button" 
-            onClick={onClose} 
+          <button
+            type="button"
+            onClick={onClose}
             className="flex-1 h-11 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors cursor-pointer"
           >
             Batal
           </button>
-          <button 
+          <button
             type="button"
             onClick={handleSubmit}
-            disabled={isSaving} 
+            disabled={isSaving}
             className="flex-[2] h-11 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full font-semibold text-xs uppercase tracking-wider shadow-[0_4px_12px_rgba(21,75,226,0.25)] active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer"
           >
             {isSaving ? "Saving..." : "Simpan"}
           </button>
         </div>
-
       </div>
     </div>
   );
 };
 
-const EmployeeDeleteModal = ({ isOpen, onClose, onConfirm, isProcessing, itemName }) => {
+const EmployeeDeleteModal = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  isProcessing,
+  itemName,
+}) => {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-6">
       <div className="bg-white w-full max-w-[340px] rounded-[24px] p-8 shadow-2xl border border-[#edecff] text-center animate-in fade-in zoom-in-95 duration-200">
         <div className="size-16 bg-red-50 rounded-full flex items-center justify-center text-[#ba1a1a] mx-auto mb-5">
-          <span className="material-symbols-outlined text-[32px]">group_remove</span>
+          <span className="material-symbols-outlined text-[32px]">
+            group_remove
+          </span>
         </div>
-        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">Hapus Karyawan</h2>
-        <p className="text-xs font-semibold text-[#181a2c] mb-6">Hapus data karyawan <span className="font-bold text-red-700">{itemName}</span> dari database?</p>
+        <h2 className="text-xl font-semibold text-[#181a2c] leading-tight mb-1">
+          Hapus Karyawan
+        </h2>
+        <p className="text-xs font-semibold text-[#181a2c] mb-6">
+          Hapus data karyawan{" "}
+          <span className="font-bold text-red-700">{itemName}</span> dari
+          database?
+        </p>
         <div className="space-y-2">
-          <button 
-            onClick={onConfirm} 
-            disabled={isProcessing} 
+          <button
+            onClick={onConfirm}
+            disabled={isProcessing}
             className="w-full py-3 bg-gradient-to-r from-[#ba1a1a] to-rose-600 text-white rounded-full font-semibold text-xs uppercase tracking-wider active:scale-[0.98] shadow-md cursor-pointer"
           >
             {isProcessing ? "Processing..." : "Ya, Hapus"}
           </button>
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="w-full py-3 text-[#635b6e] font-semibold text-xs uppercase tracking-wider hover:bg-[#f4f2ff] rounded-full transition-colors cursor-pointer"
           >
             Batal
@@ -918,14 +1224,48 @@ const EmployeeDeleteModal = ({ isOpen, onClose, onConfirm, isProcessing, itemNam
   );
 };
 
-const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncing, hasChanges, title, subtitle, category }) => {
+const DetailItemSection = ({
+  items,
+  onEdit,
+  onDelete,
+  onUploadActivity,
+  isSyncing,
+  hasChanges,
+  title,
+  subtitle,
+  category,
+}) => {
   const getConditionBadge = (cond) => {
-      const condition = String(cond).toLowerCase();
-      if (condition === 'new' || condition === 'baru') return <div className="px-2.5 py-0.5 rounded-full bg-cyan-100/60 border border-cyan-200 text-cyan-800 text-[8px] font-bold uppercase tracking-wider">BARU</div>;
-      if (condition === 'berkurang') return <div className="px-2.5 py-0.5 rounded-full bg-emerald-100/60 border border-emerald-200 text-emerald-800 text-[8px] font-bold uppercase tracking-wider">BERKURANG</div>;
-      if (condition === 'bertambah') return <div className="px-2.5 py-0.5 rounded-full bg-[#edecff] border border-[#c4c5d8] text-primary text-[8px] font-bold uppercase tracking-wider">BERTAMBAH</div>;
-      if (condition === 'habis') return <div className="px-2.5 py-0.5 rounded-full bg-orange-100/60 border border-orange-200 text-orange-850 text-[8px] font-bold uppercase tracking-wider">AKAN DIHAPUS</div>;
-      return <div className="px-2.5 py-0.5 rounded-full bg-red-100/60 border border-red-200 text-red-800 text-[8px] font-bold uppercase tracking-wider">TETAP</div>;
+    const condition = String(cond).toLowerCase();
+    if (condition === "new" || condition === "baru")
+      return (
+        <div className="px-2.5 py-0.5 rounded-full bg-cyan-100/60 border border-cyan-200 text-cyan-800 text-[8px] font-bold uppercase tracking-wider">
+          BARU
+        </div>
+      );
+    if (condition === "berkurang")
+      return (
+        <div className="px-2.5 py-0.5 rounded-full bg-emerald-100/60 border border-emerald-200 text-emerald-800 text-[8px] font-bold uppercase tracking-wider">
+          BERKURANG
+        </div>
+      );
+    if (condition === "bertambah")
+      return (
+        <div className="px-2.5 py-0.5 rounded-full bg-[#edecff] border border-[#c4c5d8] text-primary text-[8px] font-bold uppercase tracking-wider">
+          BERTAMBAH
+        </div>
+      );
+    if (condition === "habis")
+      return (
+        <div className="px-2.5 py-0.5 rounded-full bg-orange-100/60 border border-orange-200 text-orange-850 text-[8px] font-bold uppercase tracking-wider">
+          AKAN DIHAPUS
+        </div>
+      );
+    return (
+      <div className="px-2.5 py-0.5 rounded-full bg-red-100/60 border border-red-200 text-red-800 text-[8px] font-bold uppercase tracking-wider">
+        TETAP
+      </div>
+    );
   };
 
   return (
@@ -933,43 +1273,82 @@ const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncin
       <div className="flex justify-between items-start mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-             <div className="size-2 bg-primary rounded-full animate-pulse" />
-             <h3 className="text-base font-semibold text-[#181a2c] tracking-tight">{title}</h3>
+            <div className="size-2 bg-primary rounded-full animate-pulse" />
+            <h3 className="text-base font-semibold text-[#181a2c] tracking-tight">
+              {title}
+            </h3>
           </div>
-          <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider">{subtitle}</p>
-          {category && <p className="text-[9px] text-primary font-bold uppercase tracking-widest mt-0.5">{category}</p>}
+          <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider">
+            {subtitle}
+          </p>
+          {category && (
+            <p className="text-[9px] text-primary font-bold uppercase tracking-widest mt-0.5">
+              {category}
+            </p>
+          )}
         </div>
         <div className="bg-white shadow-[0_4px_12px_rgba(21,75,226,0.08)] px-3 py-1.5 rounded-full text-right">
-           <p className="text-[8px] font-bold text-[#8E94B7] uppercase leading-none mb-0.5">Total LOT</p>
-           <p className="text-xs font-bold text-primary">{items.length}</p>
+          <p className="text-[8px] font-bold text-[#8E94B7] uppercase leading-none mb-0.5">
+            Total LOT
+          </p>
+          <p className="text-xs font-bold text-primary">{items.length}</p>
         </div>
       </div>
 
       <div className="space-y-3.5 max-h-[480px] overflow-y-auto px-5 py-5 -mx-5 -my-5 custom-scrollbar">
         {items.length === 0 ? (
           <div className="py-12 flex flex-col items-center justify-center text-center px-4 bg-white shadow-sm rounded-[24px]">
-            <p className="text-[11px] font-semibold text-[#8E94B7] uppercase tracking-wider">Feed Kosong</p>
+            <p className="text-[11px] font-semibold text-[#8E94B7] uppercase tracking-wider">
+              Feed Kosong
+            </p>
           </div>
         ) : (
           items.map((item, index) => (
-            <div key={item.id || index} className="group bg-[#fbfaff] rounded-[18px] p-3.5 flex flex-col gap-3 shadow-[0_16px_36px_rgba(21,75,226,0.25)] hover:shadow-[0_20px_48px_rgba(21,75,226,0.32)] transition-all duration-300">
+            <div
+              key={item.id || index}
+              className="group bg-[#fbfaff] rounded-[18px] p-3.5 flex flex-col gap-3 shadow-[0_16px_36px_rgba(21,75,226,0.25)] hover:shadow-[0_20px_48px_rgba(21,75,226,0.32)] transition-all duration-300"
+            >
               <div className="flex items-start justify-between w-full gap-2 font-sans">
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-[#181a2c] text-sm tracking-tight">{item.lot}</p>
+                    <p className="font-semibold text-[#181a2c] text-sm tracking-tight">
+                      {item.lot}
+                    </p>
                     <div className="px-2 py-0.5 rounded-full bg-red-100/50 border border-red-200 mt-0.5">
-                       <p className="text-[8.5px] font-bold text-red-700 uppercase tracking-wide">EXP: {item.expired}</p>
+                      <p className="text-[8.5px] font-bold text-red-700 uppercase tracking-wide">
+                        EXP: {item.expired}
+                      </p>
                     </div>
                   </div>
                   {(() => {
-                    const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
+                    const monthsKeys = [
+                      "jan",
+                      "feb",
+                      "mar",
+                      "apr",
+                      "mei",
+                      "jun",
+                      "jul",
+                      "ags",
+                      "sep",
+                      "okt",
+                      "nov",
+                      "des",
+                    ];
                     const currentMonthIdx = new Date().getMonth();
-                    const prevMonthIdx = currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
+                    const prevMonthIdx =
+                      currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
                     const prevMonthKey = monthsKeys[prevMonthIdx];
-                    const prevVal = item[prevMonthKey] !== undefined ? Number(item[prevMonthKey]) : 0;
+                    const prevVal =
+                      item[prevMonthKey] !== undefined
+                        ? Number(item[prevMonthKey])
+                        : 0;
                     return (
                       <p className="text-[10px] text-[#8E94B7] mt-0.5 font-medium">
-                        Bulan lalu ({prevMonthKey.toUpperCase()}): <span className="text-slate-700 font-semibold">{prevVal} Kg</span>
+                        Bulan lalu ({prevMonthKey.toUpperCase()}):{" "}
+                        <span className="text-slate-700 font-semibold">
+                          {prevVal} Kg
+                        </span>
                       </p>
                     );
                   })()}
@@ -978,10 +1357,12 @@ const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncin
                   {getConditionBadge(item.condition)}
                 </div>
               </div>
-              
+
               <div className="flex items-center justify-between w-full gap-2">
                 <div className="flex items-center gap-2 bg-primary px-3 py-1.5 rounded-full min-w-0 flex-1 shadow-[0_10px_24px_rgba(21,75,226,0.38)]">
-                  <p className="text-[11px] text-white font-semibold uppercase tracking-tight whitespace-normal break-words leading-tight flex-1">{item.hybrid}</p>
+                  <p className="text-[11px] text-white font-semibold uppercase tracking-tight whitespace-normal break-words leading-tight flex-1">
+                    {item.hybrid}
+                  </p>
                   <div className="w-px h-3.5 bg-white/25 flex-shrink-0" />
                   <p className="text-[11px] font-black text-white flex-shrink-0">
                     {(() => {
@@ -990,19 +1371,33 @@ const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncin
                         return num.toFixed(2);
                       }
                       return item.stock;
-                    })()}{' '}
-                    <span className="text-[8.5px] text-white/75 font-medium">Kg</span>
+                    })()}{" "}
+                    <span className="text-[8.5px] text-white/75 font-medium">
+                      Kg
+                    </span>
                   </p>
                   <div className="w-px h-3.5 bg-white/25 flex-shrink-0" />
-                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-tight flex-shrink-0">{item.aging} BLN</p>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-tight flex-shrink-0">
+                    {item.aging} BLN
+                  </p>
                 </div>
-                
+
                 <div className="flex gap-1.5 flex-shrink-0">
-                  <button onClick={() => onEdit(item)} className="size-9 rounded-full bg-[#edecff] text-primary hover:bg-[#e6e6ff] transition-all flex items-center justify-center border border-[#c4c5d8] shadow-sm">
-                    <span className="material-symbols-outlined text-[18px]">edit_square</span>
+                  <button
+                    onClick={() => onEdit(item)}
+                    className="size-9 rounded-full bg-[#edecff] text-primary hover:bg-[#e6e6ff] transition-all flex items-center justify-center border border-[#c4c5d8] shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      edit_square
+                    </span>
                   </button>
-                  <button onClick={() => onDelete(item)} className="size-9 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-all flex items-center justify-center border border-red-100 shadow-sm">
-                    <span className="material-symbols-outlined text-[18px]">delete_sweep</span>
+                  <button
+                    onClick={() => onDelete(item)}
+                    className="size-9 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-all flex items-center justify-center border border-red-100 shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      delete_sweep
+                    </span>
                   </button>
                 </div>
               </div>
@@ -1010,29 +1405,39 @@ const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncin
           ))
         )}
       </div>
-      
-      <button 
-        onClick={onUploadActivity} 
-        disabled={isSyncing || !hasChanges} 
+
+      <button
+        onClick={onUploadActivity}
+        disabled={isSyncing || !hasChanges}
         className={`w-full h-14 mt-6 text-white rounded-full font-semibold text-xs uppercase tracking-wider shadow-none transition-all flex items-center justify-center gap-3 active:scale-[0.98] ${
-          isSyncing || !hasChanges 
-            ? 'bg-[#e0e0fa] text-[#8E94B7] border border-[#edecff] cursor-not-allowed' 
-            : 'bg-gradient-to-r from-primary to-cyan-400 hover:opacity-95 shadow-[0_8px_20px_rgba(21,75,226,0.25)]'
+          isSyncing || !hasChanges
+            ? "bg-[#e0e0fa] text-[#8E94B7] border border-[#edecff] cursor-not-allowed"
+            : "bg-gradient-to-r from-primary to-cyan-400 hover:opacity-95 shadow-[0_8px_20px_rgba(21,75,226,0.25)]"
         }`}
       >
-        {isSyncing ? <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <span className="material-symbols-outlined text-sm">cloud_upload</span>}
-        {isSyncing ? "Uploading..." : hasChanges ? "Upload Activity" : "Data Tersinkron"}
+        {isSyncing ? (
+          <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+        ) : (
+          <span className="material-symbols-outlined text-sm">
+            cloud_upload
+          </span>
+        )}
+        {isSyncing
+          ? "Uploading..."
+          : hasChanges
+            ? "Upload Activity"
+            : "Data Tersinkron"}
       </button>
     </div>
   );
 };
 
-const Dashboard = ({ 
-  userData, 
-  activeTab, 
-  onLogout, 
-  onUserSwitch, 
-  setUserData, 
+const Dashboard = ({
+  userData,
+  activeTab,
+  onLogout,
+  onUserSwitch,
+  setUserData,
   setActiveTab,
   overviewMetricFilter,
   setOverviewMetricFilter,
@@ -1047,21 +1452,23 @@ const Dashboard = ({
   filterBelowArea,
   setFilterBelowArea,
   filterBelowCrop,
-  setFilterBelowCrop
+  setFilterBelowCrop,
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const [isUserSwitching, setIsUserSwitching] = useState(false);
   const [isQuickSwitchVisible, setIsQuickSwitchVisible] = useState(true);
-  const [historyChartType, setHistoryChartType] = useState<'opening' | 'ending' | 'stockIn' | 'idle' | 'pog'>('pog');
+  const [historyChartType, setHistoryChartType] = useState<
+    "opening" | "ending" | "stockIn" | "idle" | "pog"
+  >("pog");
 
   const handleSwitchUser = async (targetName) => {
     if (isUserSwitching) return;
     setIsUserSwitching(true);
     try {
       if (onUserSwitch) {
-        await onUserSwitch(targetName, 'bypass_password');
+        await onUserSwitch(targetName, "bypass_password");
       }
     } catch (err) {
       console.error("Gagal ganti user:", err);
@@ -1073,7 +1480,12 @@ const Dashboard = ({
   const handleFullscreen = () => {
     try {
       const docEl = document.documentElement;
-      if (!document.fullscreenElement && !(document as any).webkitFullscreenElement && !(document as any).mozFullScreenElement && !(document as any).msFullscreenElement) {
+      if (
+        !document.fullscreenElement &&
+        !(document as any).webkitFullscreenElement &&
+        !(document as any).mozFullScreenElement &&
+        !(document as any).msFullscreenElement
+      ) {
         if (docEl.requestFullscreen) {
           docEl.requestFullscreen();
         } else if ((docEl as any).webkitRequestFullscreen) {
@@ -1098,12 +1510,12 @@ const Dashboard = ({
       console.error("Error toggling fullscreen mode:", e);
     }
   };
-  
+
   const [kiosks, setKiosks] = useState([]);
   const [workingData, setWorkingData] = useState([]);
   const [rawWorkingData, setRawWorkingData] = useState([]);
   const [drSalesData, setDrSalesData] = useState<any[]>([]);
-  const [deletedItems, setDeletedItems] = useState([]); 
+  const [deletedItems, setDeletedItems] = useState([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isChannelsLoading, setIsChannelsLoading] = useState(true);
   const [isFetchingData, setIsFetchingData] = useState(true);
@@ -1113,7 +1525,8 @@ const Dashboard = ({
   const [showLoader, setShowLoader] = useState(true);
 
   useEffect(() => {
-    const isLoadingData = isFetchingData || isChannelsLoading || isEmployeesLoading;
+    const isLoadingData =
+      isFetchingData || isChannelsLoading || isEmployeesLoading;
     if (isLoadingData) {
       setShowLoader(true);
       setLoadProgress(0);
@@ -1126,7 +1539,7 @@ const Dashboard = ({
         } else if (currentProgress < 85) {
           currentProgress += Math.floor(Math.random() * 3) + 1;
         } else if (currentProgress < 98) {
-          currentProgress += (Math.random() > 0.6 ? 1 : 0);
+          currentProgress += Math.random() > 0.6 ? 1 : 0;
         }
         if (currentProgress > 98) currentProgress = 98;
         setLoadProgress(currentProgress);
@@ -1145,33 +1558,42 @@ const Dashboard = ({
   }, [isFetchingData, isChannelsLoading, isEmployeesLoading]);
 
   // Dimension filter for Executive Overview chart (Area, Province, Sales Agronomist, Business Solution, Material)
-  const [overviewGroupDimension, setOverviewGroupDimension] = useState<'area' | 'province' | 'sales_agronomist' | 'business_solution' | 'material'>('area');
+  const [overviewGroupDimension, setOverviewGroupDimension] = useState<
+    "area" | "province" | "sales_agronomist" | "business_solution" | "material"
+  >("area");
 
   const isBusinessAnalyst = useMemo(() => {
     if (!userData) return false;
-    return (userData.position && cleanForMatch(userData.position) === 'businessanalyst') || 
-           (cleanForMatch(userData.name || '') === 'adityawiratama') || 
-           (cleanForMatch(userData.name || '') === 'aditya');
+    return (
+      (userData.position &&
+        cleanForMatch(userData.position) === "businessanalyst") ||
+      cleanForMatch(userData.name || "") === "adityawiratama" ||
+      cleanForMatch(userData.name || "") === "aditya"
+    );
   }, [userData]);
 
   // State Tab Home
-  const [selectedKiosk, setSelectedKiosk] = useState('Loading Kiosk...');
+  const [selectedKiosk, setSelectedKiosk] = useState("Loading Kiosk...");
 
   const handleChannelClick = (channelName: string) => {
-    const matchedKiosk = kiosks.find(k => cleanForMatch(k.name) === cleanForMatch(channelName));
+    const matchedKiosk = kiosks.find(
+      (k) => cleanForMatch(k.name) === cleanForMatch(channelName),
+    );
     if (matchedKiosk) {
       setSelectedKiosk(matchedKiosk.name);
       if (setActiveTab) {
-        setActiveTab('home');
+        setActiveTab("home");
       }
     }
   };
 
   const renderMaybeChannelName = (name: string, defaultClass = "") => {
-    const isChannel = kiosks.some(k => cleanForMatch(k.name) === cleanForMatch(name));
+    const isChannel = kiosks.some(
+      (k) => cleanForMatch(k.name) === cleanForMatch(name),
+    );
     if (isChannel) {
       return (
-        <span 
+        <span
           onClick={(e) => {
             e.stopPropagation();
             handleChannelClick(name);
@@ -1180,14 +1602,16 @@ const Dashboard = ({
           title="Klik untuk input aktivitas partner ini"
         >
           {name}
-          <span className="material-symbols-outlined text-[13px] inline opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all text-primary">edit_note</span>
+          <span className="material-symbols-outlined text-[13px] inline opacity-60 group-hover:opacity-100 group-hover:scale-110 transition-all text-primary">
+            edit_note
+          </span>
         </span>
       );
     }
     return <span className={defaultClass}>{name}</span>;
   };
-  const [lotNo, setLotNo] = useState('');
-  const [qty, setQty] = useState('');
+  const [lotNo, setLotNo] = useState("");
+  const [qty, setQty] = useState("");
   const [editModal, setEditModal] = useState({ isOpen: false, item: null });
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, item: null });
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -1201,7 +1625,11 @@ const Dashboard = ({
 
   const userLevel = useMemo(() => {
     if (!userData) return 0;
-    if (userData.level !== undefined && userData.level !== null && String(userData.level).trim() !== '') {
+    if (
+      userData.level !== undefined &&
+      userData.level !== null &&
+      String(userData.level).trim() !== ""
+    ) {
       const parsed = parseLevelStr(userData.level);
       if (!isNaN(parsed)) return parsed;
     }
@@ -1215,273 +1643,454 @@ const Dashboard = ({
   }, [userData]);
 
   const [partnerSubTab, setPartnerSubTab] = useState(() => {
-    const parsedLevel = userData?.level !== undefined && userData?.level !== null && String(userData?.level).trim() !== ''
-      ? parseLevelStr(userData.level) 
-      : (userData?.position ? (getPositionRank(userData.position) === 5 ? 1 : 0) : 0);
-    return parsedLevel === 1 ? 'channel' : 'team';
+    const parsedLevel =
+      userData?.level !== undefined &&
+      userData?.level !== null &&
+      String(userData?.level).trim() !== ""
+        ? parseLevelStr(userData.level)
+        : userData?.position
+          ? getPositionRank(userData.position) === 5
+            ? 1
+            : 0
+          : 0;
+    return parsedLevel === 1 ? "channel" : "team";
   });
 
   useEffect(() => {
     if (userLevel === 1) {
-      setPartnerSubTab('channel');
+      setPartnerSubTab("channel");
     } else {
-      setPartnerSubTab('team');
+      setPartnerSubTab("team");
     }
   }, [userData, userLevel]);
 
-  const [mappingPic, setMappingPic] = useState('');
-  const [mappingCategory, setMappingCategory] = useState('');
-  const [partnerEditModal, setPartnerEditModal] = useState({ isOpen: false, item: null });
-  const [partnerDeleteModal, setPartnerDeleteModal] = useState({ isOpen: false, item: null });
+  const [mappingPic, setMappingPic] = useState("");
+  const [mappingCategory, setMappingCategory] = useState("");
+  const [partnerEditModal, setPartnerEditModal] = useState({
+    isOpen: false,
+    item: null,
+  });
+  const [partnerDeleteModal, setPartnerDeleteModal] = useState({
+    isOpen: false,
+    item: null,
+  });
   const [channelsRefreshKey, setChannelsRefreshKey] = useState(0);
 
   // State Employee Modifying & Hirarki Expand/Collapse
-  const [employeeEditModal, setEmployeeEditModal] = useState<{ isOpen: boolean; item: any | null }>({ isOpen: false, item: null });
-  const [employeeDeleteModal, setEmployeeDeleteModal] = useState<{ isOpen: boolean; item: any | null }>({ isOpen: false, item: null });
+  const [employeeEditModal, setEmployeeEditModal] = useState<{
+    isOpen: boolean;
+    item: any | null;
+  }>({ isOpen: false, item: null });
+  const [employeeDeleteModal, setEmployeeDeleteModal] = useState<{
+    isOpen: boolean;
+    item: any | null;
+  }>({ isOpen: false, item: null });
   const [employeesRefreshKey, setEmployeesRefreshKey] = useState(0);
-  const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>({});
+  const [collapsedNodes, setCollapsedNodes] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const availableProvinces = useMemo(() => {
     const list = new Set<string>();
-    employees.forEach(emp => {
-      const prov = String(emp.province || '').trim();
-      if (prov && prov !== '-') {
+    employees.forEach((emp) => {
+      const prov = String(emp.province || "").trim();
+      if (prov && prov !== "-") {
         list.add(prov);
       }
     });
     // Fallback defaults
-    ['Jawa Timur', 'Jawa Tengah', 'Jawa Barat'].forEach(p => list.add(p));
+    ["Jawa Timur", "Jawa Tengah", "Jawa Barat"].forEach((p) => list.add(p));
     return Array.from(list).sort();
   }, [employees]);
 
   // State Tab Summary
-  const [summaryGroupBy, setSummaryGroupBy] = useState('hybrid'); // Default changed to 'hybrid'
-  const [summarySubGroupBy, setSummarySubGroupBy] = useState('channel'); // Sub category
-  const [summaryFilterCrop, setSummaryFilterCrop] = useState('All'); // New state for Crop filter
+  const [summaryGroupBy, setSummaryGroupBy] = useState("hybrid"); // Default changed to 'hybrid'
+  const [summarySubGroupBy, setSummarySubGroupBy] = useState("channel"); // Sub category
+  const [summaryFilterCrop, setSummaryFilterCrop] = useState("All"); // New state for Crop filter
   const [isSummaryFilterOpen, setIsSummaryFilterOpen] = useState(true);
   const enrichedSummaryDataRef = useRef<any[]>([]);
 
   // State Tab Temp (Temporary Review Page)
-  const [tempSearchQuery, setTempSearchQuery] = useState('');
-  const [tempSortBy, setTempSortBy] = useState('checker');
-  const [tempSortOrder, setTempSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [expandedTempRowId, setExpandedTempRowId] = useState<string | null>(null);
+  const [tempSearchQuery, setTempSearchQuery] = useState("");
+  const [tempSortBy, setTempSortBy] = useState("checker");
+  const [tempSortOrder, setTempSortOrder] = useState<"asc" | "desc">("asc");
+  const [expandedTempRowId, setExpandedTempRowId] = useState<string | null>(
+    null,
+  );
   const [isTempProceeded, setIsTempProceeded] = useState(false);
   const [isConsolidatingDb, setIsConsolidatingDb] = useState(false);
-  const [consolidationSuccessMsg, setConsolidationSuccessMsg] = useState('');
-  
+  const [consolidationSuccessMsg, setConsolidationSuccessMsg] = useState("");
+
   // State Tab POG
-  const [pogGroupBy, setPogGroupBy] = useState('hybrid');
-  const [pogSubGroupBy, setPogSubGroupBy] = useState('channel');
-  const [pogFilterCrop, setPogFilterCrop] = useState('All');
+  const [pogGroupBy, setPogGroupBy] = useState("hybrid");
+  const [pogSubGroupBy, setPogSubGroupBy] = useState("channel");
+  const [pogFilterCrop, setPogFilterCrop] = useState("All");
   const [pogExpandedRows, setPogExpandedRows] = useState({});
   const [isPogFilterOpen, setIsPogFilterOpen] = useState(true);
 
   const [expandedRows, setExpandedRows] = useState({});
-  const CLUSTER_CONFIG = useMemo(() => [
-    { key: '0-2', label: '0-2', colorHeader: 'text-blue-500', colorCell: 'text-blue-600', colorGrand: 'text-blue-600', colorChild: 'text-blue-500' },
-    { key: '2-4', label: '2-4', colorHeader: 'text-amber-500', colorCell: 'text-amber-500', colorGrand: 'text-amber-600', colorChild: 'text-amber-400' },
-    { key: '4-6', label: '4-6', colorHeader: 'text-amber-600', colorCell: 'text-amber-600', colorGrand: 'text-amber-700', colorChild: 'text-amber-500' },
-    { key: '6-9', label: '6-9', colorHeader: 'text-orange-500', colorCell: 'text-orange-500', colorGrand: 'text-orange-600', colorChild: 'text-orange-400' },
-    { key: '9-12', label: '9-12', colorHeader: 'text-red-500', colorCell: 'text-red-500', colorGrand: 'text-red-600', colorChild: 'text-red-400' },
-    { key: '>12', label: '>12', colorHeader: 'text-red-700', colorCell: 'text-red-700', colorGrand: 'text-red-800', colorChild: 'text-red-600' },
-    { key: 'Uncategorized', label: 'N/A', colorHeader: 'text-slate-500', colorCell: 'text-slate-600', colorGrand: 'text-slate-600', colorChild: 'text-slate-400' }
-  ], []);
+  const CLUSTER_CONFIG = useMemo(
+    () => [
+      {
+        key: "0-2",
+        label: "0-2",
+        colorHeader: "text-blue-500",
+        colorCell: "text-blue-600",
+        colorGrand: "text-blue-600",
+        colorChild: "text-blue-500",
+      },
+      {
+        key: "2-4",
+        label: "2-4",
+        colorHeader: "text-amber-500",
+        colorCell: "text-amber-500",
+        colorGrand: "text-amber-600",
+        colorChild: "text-amber-400",
+      },
+      {
+        key: "4-6",
+        label: "4-6",
+        colorHeader: "text-amber-600",
+        colorCell: "text-amber-600",
+        colorGrand: "text-amber-700",
+        colorChild: "text-amber-500",
+      },
+      {
+        key: "6-9",
+        label: "6-9",
+        colorHeader: "text-orange-500",
+        colorCell: "text-orange-500",
+        colorGrand: "text-orange-600",
+        colorChild: "text-orange-400",
+      },
+      {
+        key: "9-12",
+        label: "9-12",
+        colorHeader: "text-red-500",
+        colorCell: "text-red-500",
+        colorGrand: "text-red-600",
+        colorChild: "text-red-400",
+      },
+      {
+        key: ">12",
+        label: ">12",
+        colorHeader: "text-red-700",
+        colorCell: "text-red-700",
+        colorGrand: "text-red-800",
+        colorChild: "text-red-600",
+      },
+      {
+        key: "Uncategorized",
+        label: "N/A",
+        colorHeader: "text-slate-500",
+        colorCell: "text-slate-600",
+        colorGrand: "text-slate-600",
+        colorChild: "text-slate-400",
+      },
+    ],
+    [],
+  );
 
-  const ALL_CLUSTER_KEYS = useMemo(() => CLUSTER_CONFIG.map(c => c.key), [CLUSTER_CONFIG]);
+  const ALL_CLUSTER_KEYS = useMemo(
+    () => CLUSTER_CONFIG.map((c) => c.key),
+    [CLUSTER_CONFIG],
+  );
   const [selectedClusters, setSelectedClusters] = useState(ALL_CLUSTER_KEYS);
 
-  const toggleRow = (name) => setExpandedRows(prev => ({ ...prev, [name]: !prev[name] }));
-  const togglePogRow = (name) => setPogExpandedRows(prev => ({ ...prev, [name]: !prev[name] }));
+  const toggleRow = (name) =>
+    setExpandedRows((prev) => ({ ...prev, [name]: !prev[name] }));
+  const togglePogRow = (name) =>
+    setPogExpandedRows((prev) => ({ ...prev, [name]: !prev[name] }));
 
   const teamMembers = useMemo(() => {
     if (!userData) return [];
 
-    const myNameClean = cleanForMatch(userData.name || '');
-    const isBusinessAnalyst = (userData.position && cleanForMatch(userData.position) === 'businessanalyst') || (cleanForMatch(userData.name) === 'adityawiratama') || (cleanForMatch(userData.name) === 'aditya');
+    const myNameClean = cleanForMatch(userData.name || "");
+    const isBusinessAnalyst =
+      (userData.position &&
+        cleanForMatch(userData.position) === "businessanalyst") ||
+      cleanForMatch(userData.name) === "adityawiratama" ||
+      cleanForMatch(userData.name) === "aditya";
 
     let rawList: string[] = [];
 
     if (employees && employees.length > 0) {
-        if (isBusinessAnalyst) {
-            const allNames = employees.map(e => e.name).filter(Boolean);
-            if (!allNames.some(n => cleanForMatch(n) === myNameClean)) {
-                allNames.unshift(userData.name);
-            }
-            rawList = allNames;
-        } else {
-            const resultList = [];
-            const queue = [myNameClean];
-            const visited = new Set(queue);
-
-            while (queue.length > 0) {
-                const curr = queue.shift()!;
-                
-                const matchingEmp = employees.find(e => cleanForMatch(e.name) === curr || (e.email && cleanForMatch(e.email) === curr));
-                const identifiersToMatch = new Set<string>();
-                identifiersToMatch.add(curr);
-                if (matchingEmp) {
-                    if (!resultList.some(r => cleanForMatch(r) === cleanForMatch(matchingEmp.name))) {
-                        resultList.push(matchingEmp.name);
-                    }
-                    if (matchingEmp.name) identifiersToMatch.add(cleanForMatch(matchingEmp.name));
-                    if (matchingEmp.email) identifiersToMatch.add(cleanForMatch(matchingEmp.email));
-                }
-
-                employees.forEach(emp => {
-                    const empUplineClean = cleanForMatch(emp.upline);
-                    if (empUplineClean && identifiersToMatch.has(empUplineClean)) {
-                        const empClean = cleanForMatch(emp.name);
-                        if (empClean && !visited.has(empClean)) {
-                            visited.add(empClean);
-                            queue.push(empClean);
-                        }
-                    }
-                });
-            }
-
-            const userMatchedEmp = employees.find(e => cleanForMatch(e.name) === myNameClean || (e.email && cleanForMatch(e.email) === myNameClean));
-            const finalUserName = userMatchedEmp ? userMatchedEmp.name : userData.name;
-
-            if (!resultList.some(r => cleanForMatch(r) === cleanForMatch(finalUserName))) {
-                resultList.unshift(finalUserName);
-            }
-
-            rawList = resultList;
+      if (isBusinessAnalyst) {
+        const allNames = employees.map((e) => e.name).filter(Boolean);
+        if (!allNames.some((n) => cleanForMatch(n) === myNameClean)) {
+          allNames.unshift(userData.name);
         }
-    } else if (userData.teamProfiles && Object.keys(userData.teamProfiles).length > 0) {
-        let realRootName = userData.name;
-        const foundProfileKey = Object.keys(userData.teamProfiles).find(k => 
-            cleanForMatch(k) === myNameClean || (userData.teamProfiles[k]?.email && cleanForMatch(userData.teamProfiles[k].email) === myNameClean)
-        );
-        if (foundProfileKey) {
-            realRootName = foundProfileKey;
-        }
-        const cleanRealRoot = cleanForMatch(realRootName);
+        rawList = allNames;
+      } else {
+        const resultList = [];
+        const queue = [myNameClean];
+        const visited = new Set(queue);
 
-        const depths = buildDepthMap(realRootName, userData.teamProfiles);
-        const maxDepth = 5;
-        
-        const filtered = Object.keys(userData.teamProfiles).filter(name => {
-            const d = depths[cleanForMatch(name)] ?? 99;
-            return d <= maxDepth;
-        });
-        
-        const withoutMe = filtered.filter(n => cleanForMatch(n) !== cleanRealRoot && cleanForMatch(n) !== myNameClean);
-        const result = [realRootName, ...withoutMe];
-        if (userData.name !== realRootName && !result.includes(userData.name)) {
-            result.unshift(userData.name);
-        }
-        rawList = result;
-    } else {
-        let uniquePics = [...(userData.subordinates || [])];
-        
-        let added = true;
-        while (added) {
-          added = false;
-          kiosks.forEach(k => {
-             const uplineClean = cleanForMatch(k.upline || '');
-             const picStr = String(k.pic || '').trim();
-             const picClean = cleanForMatch(picStr);
+        while (queue.length > 0) {
+          const curr = queue.shift()!;
 
-             const isDirectMatch = !isBusinessAnalyst && uplineClean !== '' && myNameClean !== '' && (uplineClean.includes(myNameClean) || myNameClean.includes(uplineClean));
-             const isTransitiveMatch = uplineClean !== '' && uniquePics.some(m => cleanForMatch(m) === uplineClean);
+          const matchingEmp = employees.find(
+            (e) =>
+              cleanForMatch(e.name) === curr ||
+              (e.email && cleanForMatch(e.email) === curr),
+          );
+          const identifiersToMatch = new Set<string>();
+          identifiersToMatch.add(curr);
+          if (matchingEmp) {
+            if (
+              !resultList.some(
+                (r) => cleanForMatch(r) === cleanForMatch(matchingEmp.name),
+              )
+            ) {
+              resultList.push(matchingEmp.name);
+            }
+            if (matchingEmp.name)
+              identifiersToMatch.add(cleanForMatch(matchingEmp.name));
+            if (matchingEmp.email)
+              identifiersToMatch.add(cleanForMatch(matchingEmp.email));
+          }
 
-             if (isDirectMatch || isTransitiveMatch) {
-                 if (picClean !== '' && picClean !== myNameClean && !picClean.includes(myNameClean)) {
-                     if (!uniquePics.some(existing => cleanForMatch(existing) === picClean)) {
-                         uniquePics.push(picStr);
-                         added = true;
-                     }
-                 }
-             }
+          employees.forEach((emp) => {
+            const empUplineClean = cleanForMatch(emp.upline);
+            if (empUplineClean && identifiersToMatch.has(empUplineClean)) {
+              const empClean = cleanForMatch(emp.name);
+              if (empClean && !visited.has(empClean)) {
+                visited.add(empClean);
+                queue.push(empClean);
+              }
+            }
           });
         }
 
-        // FALLBACK AMAN: Jika hasil filter tim sangat sedikit, atau user menggunakan akun demo/tidak terpetakan,
-        // maka masukkan semua PIC yang ada di daftar Kiosks agar data Stock Summary/POG tetap tampil dan dapat dianalisis.
-        if (uniquePics.length <= (userData.subordinates?.length || 0)) {
-            kiosks.forEach(k => {
-               const picStr = String(k.pic || '').trim();
-               const picClean = cleanForMatch(picStr);
-               if (picStr && picClean !== '' && picClean !== myNameClean) {
-                   if (!uniquePics.some(existing => cleanForMatch(existing) === picClean)) {
-                       uniquePics.push(picStr);
-                   }
-               }
-            });
+        const userMatchedEmp = employees.find(
+          (e) =>
+            cleanForMatch(e.name) === myNameClean ||
+            (e.email && cleanForMatch(e.email) === myNameClean),
+        );
+        const finalUserName = userMatchedEmp
+          ? userMatchedEmp.name
+          : userData.name;
+
+        if (
+          !resultList.some(
+            (r) => cleanForMatch(r) === cleanForMatch(finalUserName),
+          )
+        ) {
+          resultList.unshift(finalUserName);
         }
 
-        if (!uniquePics.some(existing => cleanForMatch(existing) === myNameClean)) {
-           uniquePics.unshift(userData.name);
-        }
-        rawList = uniquePics;
+        rawList = resultList;
+      }
+    } else if (
+      userData.teamProfiles &&
+      Object.keys(userData.teamProfiles).length > 0
+    ) {
+      let realRootName = userData.name;
+      const foundProfileKey = Object.keys(userData.teamProfiles).find(
+        (k) =>
+          cleanForMatch(k) === myNameClean ||
+          (userData.teamProfiles[k]?.email &&
+            cleanForMatch(userData.teamProfiles[k].email) === myNameClean),
+      );
+      if (foundProfileKey) {
+        realRootName = foundProfileKey;
+      }
+      const cleanRealRoot = cleanForMatch(realRootName);
+
+      const depths = buildDepthMap(realRootName, userData.teamProfiles);
+      const maxDepth = 5;
+
+      const filtered = Object.keys(userData.teamProfiles).filter((name) => {
+        const d = depths[cleanForMatch(name)] ?? 99;
+        return d <= maxDepth;
+      });
+
+      const withoutMe = filtered.filter(
+        (n) =>
+          cleanForMatch(n) !== cleanRealRoot &&
+          cleanForMatch(n) !== myNameClean,
+      );
+      const result = [realRootName, ...withoutMe];
+      if (userData.name !== realRootName && !result.includes(userData.name)) {
+        result.unshift(userData.name);
+      }
+      rawList = result;
+    } else {
+      let uniquePics = [...(userData.subordinates || [])];
+
+      let added = true;
+      while (added) {
+        added = false;
+        kiosks.forEach((k) => {
+          const uplineClean = cleanForMatch(k.upline || "");
+          const picStr = String(k.pic || "").trim();
+          const picClean = cleanForMatch(picStr);
+
+          const isDirectMatch =
+            !isBusinessAnalyst &&
+            uplineClean !== "" &&
+            myNameClean !== "" &&
+            (uplineClean.includes(myNameClean) ||
+              myNameClean.includes(uplineClean));
+          const isTransitiveMatch =
+            uplineClean !== "" &&
+            uniquePics.some((m) => cleanForMatch(m) === uplineClean);
+
+          if (isDirectMatch || isTransitiveMatch) {
+            if (
+              picClean !== "" &&
+              picClean !== myNameClean &&
+              !picClean.includes(myNameClean)
+            ) {
+              if (
+                !uniquePics.some(
+                  (existing) => cleanForMatch(existing) === picClean,
+                )
+              ) {
+                uniquePics.push(picStr);
+                added = true;
+              }
+            }
+          }
+        });
+      }
+
+      // FALLBACK AMAN: Jika hasil filter tim sangat sedikit, atau user menggunakan akun demo/tidak terpetakan,
+      // maka masukkan semua PIC yang ada di daftar Kiosks agar data Stock Summary/POG tetap tampil dan dapat dianalisis.
+      if (uniquePics.length <= (userData.subordinates?.length || 0)) {
+        kiosks.forEach((k) => {
+          const picStr = String(k.pic || "").trim();
+          const picClean = cleanForMatch(picStr);
+          if (picStr && picClean !== "" && picClean !== myNameClean) {
+            if (
+              !uniquePics.some(
+                (existing) => cleanForMatch(existing) === picClean,
+              )
+            ) {
+              uniquePics.push(picStr);
+            }
+          }
+        });
+      }
+
+      if (
+        !uniquePics.some((existing) => cleanForMatch(existing) === myNameClean)
+      ) {
+        uniquePics.unshift(userData.name);
+      }
+      rawList = uniquePics;
     }
 
     // Apply strict filtering for Level 5: if the current user level is 5, exclude other Level 5 users.
     const isMyLevel5 = (() => {
-        const cleanName = cleanForMatch(userData.name);
-        if (userData.position && cleanForMatch(userData.position) === 'businesssolution') return true;
-        if (userData.level !== undefined && userData.level !== null && String(userData.level).trim() === '5') return true;
-        if (employees && employees.length > 0) {
-            const emp = employees.find(e => cleanForMatch(e.name) === cleanName);
-            if (emp) {
-                if (emp.level !== undefined && emp.level !== null && String(emp.level).trim() === '5') return true;
-                if (cleanForMatch(emp.position) === 'businesssolution') return true;
-                if (getPositionRank(emp.position) === 5) return true;
-            }
+      const cleanName = cleanForMatch(userData.name);
+      if (
+        userData.position &&
+        cleanForMatch(userData.position) === "businesssolution"
+      )
+        return true;
+      if (
+        userData.level !== undefined &&
+        userData.level !== null &&
+        String(userData.level).trim() === "5"
+      )
+        return true;
+      if (employees && employees.length > 0) {
+        const emp = employees.find((e) => cleanForMatch(e.name) === cleanName);
+        if (emp) {
+          if (
+            emp.level !== undefined &&
+            emp.level !== null &&
+            String(emp.level).trim() === "5"
+          )
+            return true;
+          if (cleanForMatch(emp.position) === "businesssolution") return true;
+          if (getPositionRank(emp.position) === 5) return true;
         }
-        return false;
+      }
+      return false;
     })();
 
     if (isMyLevel5) {
-        return rawList.filter(memberName => {
-            const cleanName = cleanForMatch(memberName);
-            if (cleanName === myNameClean) return true; // Keep ourselves always
-            
-            // Exclude if level is 5 or position is Business Solution
-            if (employees && employees.length > 0) {
-                const emp = employees.find(e => cleanForMatch(e.name) === cleanName);
-                if (emp) {
-                    if (emp.level !== undefined && emp.level !== null && String(emp.level).trim() === '5') return false;
-                    if (cleanForMatch(emp.position) === 'businesssolution') return false;
-                    if (getPositionRank(emp.position) === 5) return false;
-                }
-            }
-            if (userData.teamProfiles) {
-                const foundKey = Object.keys(userData.teamProfiles).find(k => cleanForMatch(k) === cleanName);
-                if (foundKey) {
-                    const prof = userData.teamProfiles[foundKey];
-                    if (prof?.level !== undefined && String(prof.level).trim() === '5') return false;
-                    if (prof?.position && cleanForMatch(prof.position) === 'businesssolution') return false;
-                }
-            }
-            return true;
-        });
+      return rawList.filter((memberName) => {
+        const cleanName = cleanForMatch(memberName);
+        if (cleanName === myNameClean) return true; // Keep ourselves always
+
+        // Exclude if level is 5 or position is Business Solution
+        if (employees && employees.length > 0) {
+          const emp = employees.find(
+            (e) => cleanForMatch(e.name) === cleanName,
+          );
+          if (emp) {
+            if (
+              emp.level !== undefined &&
+              emp.level !== null &&
+              String(emp.level).trim() === "5"
+            )
+              return false;
+            if (cleanForMatch(emp.position) === "businesssolution")
+              return false;
+            if (getPositionRank(emp.position) === 5) return false;
+          }
+        }
+        if (userData.teamProfiles) {
+          const foundKey = Object.keys(userData.teamProfiles).find(
+            (k) => cleanForMatch(k) === cleanName,
+          );
+          if (foundKey) {
+            const prof = userData.teamProfiles[foundKey];
+            if (prof?.level !== undefined && String(prof.level).trim() === "5")
+              return false;
+            if (
+              prof?.position &&
+              cleanForMatch(prof.position) === "businesssolution"
+            )
+              return false;
+          }
+        }
+        return true;
+      });
     }
 
     return rawList;
-  }, [kiosks, userData, userData?.name, userData?.subordinates, userData?.position, userData?.teamProfiles, employees]);
+  }, [
+    kiosks,
+    userData,
+    userData?.name,
+    userData?.subordinates,
+    userData?.position,
+    userData?.teamProfiles,
+    employees,
+  ]);
 
-  const normalizeName = useCallback((nameStr: string) => {
-    const trimmed = nameStr.trim();
-    if (!trimmed || trimmed === 'Unknown') return 'Unknown';
-    const clean = cleanForMatch(trimmed);
-    
-    if (clean === 'agusherdianto' || clean.includes('agusherdianto')) {
-        return 'AGUS HERDIANTO';
-    }
+  const normalizeName = useCallback(
+    (nameStr: string) => {
+      const trimmed = nameStr.trim();
+      if (!trimmed || trimmed === "Unknown") return "Unknown";
+      const clean = cleanForMatch(trimmed);
 
-    const found = teamMembers.find(t => cleanForMatch(t) === clean);
-    if (found) return found.trim();
-    
-    return trimmed;
-  }, [teamMembers]);
+      if (clean === "agusherdianto" || clean.includes("agusherdianto")) {
+        return "AGUS HERDIANTO";
+      }
 
-  const [teamPositions, setTeamPositions] = useState<Record<string, string>>({});
+      const found = teamMembers.find((t) => cleanForMatch(t) === clean);
+      if (found) return found.trim();
+
+      return trimmed;
+    },
+    [teamMembers],
+  );
+
+  const [teamPositions, setTeamPositions] = useState<Record<string, string>>(
+    {},
+  );
   const [teamAreas, setTeamAreas] = useState<Record<string, string>>({});
-  const [teamProvinces, setTeamProvinces] = useState<Record<string, string>>({});
-  const [teamSubordinates, setTeamSubordinates] = useState<Record<string, string[]>>({});
+  const [teamProvinces, setTeamProvinces] = useState<Record<string, string>>(
+    {},
+  );
+  const [teamSubordinates, setTeamSubordinates] = useState<
+    Record<string, string[]>
+  >({});
   const [teamUpLines, setTeamUpLines] = useState<Record<string, string>>({});
   const [teamLevels, setTeamLevels] = useState<Record<string, number>>({});
 
@@ -1492,17 +2101,26 @@ const Dashboard = ({
     }
     setIsEmployeesLoading(true);
     fetch(`${SCRIPT_URL}?action=getEmployees`)
-      .then(res => res.json())
-      .then(res => {
-        if (res.status === 'success' && Array.isArray(res.data) && res.data.length > 0) {
+      .then((res) => res.json())
+      .then((res) => {
+        if (
+          res.status === "success" &&
+          Array.isArray(res.data) &&
+          res.data.length > 0
+        ) {
           setEmployees(res.data);
         } else {
-          console.warn("getEmployees returned non-success or empty, falling back to offline employees.");
+          console.warn(
+            "getEmployees returned non-success or empty, falling back to offline employees.",
+          );
           setEmployees(OFFLINE_EMPLOYEES);
         }
       })
-      .catch(err => {
-        console.warn("Error fetching getEmployees, using offline fallbacks:", err);
+      .catch((err) => {
+        console.warn(
+          "Error fetching getEmployees, using offline fallbacks:",
+          err,
+        );
         setEmployees(OFFLINE_EMPLOYEES);
       })
       .finally(() => {
@@ -1519,50 +2137,80 @@ const Dashboard = ({
       const subordinates: Record<string, string[]> = {};
       const levels: Record<string, number> = {};
 
-      employees.forEach(emp => {
-         const name = emp.name;
-         positions[name] = normalizePosition(emp.position);
-         areas[name] = String(emp.area || '-').trim();
-         provinces[name] = String(emp.province || '-').trim();
-         uplines[name] = String(emp.upline || '').trim();
-         if (emp.level !== undefined && emp.level !== null && String(emp.level).trim() !== '') {
-            const parsed = parseLevelStr(emp.level);
-            if (!isNaN(parsed)) {
-                levels[name] = parsed;
-            } else {
-                const rank = getPositionRank(emp.position);
-                levels[name] = rank === 1 ? 5 : rank === 2 ? 4 : rank === 3 ? 3 : rank === 4 ? 2 : rank === 5 ? 1 : 0;
-            }
-         } else {
+      employees.forEach((emp) => {
+        const name = emp.name;
+        positions[name] = normalizePosition(emp.position);
+        areas[name] = String(emp.area || "-").trim();
+        provinces[name] = String(emp.province || "-").trim();
+        uplines[name] = String(emp.upline || "").trim();
+        if (
+          emp.level !== undefined &&
+          emp.level !== null &&
+          String(emp.level).trim() !== ""
+        ) {
+          const parsed = parseLevelStr(emp.level);
+          if (!isNaN(parsed)) {
+            levels[name] = parsed;
+          } else {
             const rank = getPositionRank(emp.position);
-            levels[name] = rank === 1 ? 5 : rank === 2 ? 4 : rank === 3 ? 3 : rank === 4 ? 2 : rank === 5 ? 1 : 0;
-         }
+            levels[name] =
+              rank === 1
+                ? 5
+                : rank === 2
+                  ? 4
+                  : rank === 3
+                    ? 3
+                    : rank === 4
+                      ? 2
+                      : rank === 5
+                        ? 1
+                        : 0;
+          }
+        } else {
+          const rank = getPositionRank(emp.position);
+          levels[name] =
+            rank === 1
+              ? 5
+              : rank === 2
+                ? 4
+                : rank === 3
+                  ? 3
+                  : rank === 4
+                    ? 2
+                    : rank === 5
+                      ? 1
+                      : 0;
+        }
       });
 
-      employees.forEach(emp => {
-         const name = emp.name;
-         const directSubs: string[] = [];
-         employees.forEach(item => {
-            if (item.name !== name && item.upline) {
-               if (cleanForMatch(item.upline) === cleanForMatch(name)) {
-                  directSubs.push(item.name);
-               }
+      employees.forEach((emp) => {
+        const name = emp.name;
+        const directSubs: string[] = [];
+        employees.forEach((item) => {
+          if (item.name !== name && item.upline) {
+            if (cleanForMatch(item.upline) === cleanForMatch(name)) {
+              directSubs.push(item.name);
             }
-         });
-         subordinates[name] = directSubs;
+          }
+        });
+        subordinates[name] = directSubs;
       });
 
-      setTeamPositions(prev => ({ ...prev, ...positions }));
-      setTeamAreas(prev => ({ ...prev, ...areas }));
-      setTeamProvinces(prev => ({ ...prev, ...provinces }));
-      setTeamUpLines(prev => ({ ...prev, ...uplines }));
-      setTeamSubordinates(prev => ({ ...prev, ...subordinates }));
-      setTeamLevels(prev => ({ ...prev, ...levels }));
+      setTeamPositions((prev) => ({ ...prev, ...positions }));
+      setTeamAreas((prev) => ({ ...prev, ...areas }));
+      setTeamProvinces((prev) => ({ ...prev, ...provinces }));
+      setTeamUpLines((prev) => ({ ...prev, ...uplines }));
+      setTeamSubordinates((prev) => ({ ...prev, ...subordinates }));
+      setTeamLevels((prev) => ({ ...prev, ...levels }));
     }
   }, [employees]);
 
   useEffect(() => {
-    if (userData && userData.teamProfiles && Object.keys(userData.teamProfiles).length > 0) {
+    if (
+      userData &&
+      userData.teamProfiles &&
+      Object.keys(userData.teamProfiles).length > 0
+    ) {
       const positions: Record<string, string> = {};
       const areas: Record<string, string> = {};
       const provinces: Record<string, string> = {};
@@ -1570,103 +2218,144 @@ const Dashboard = ({
       const subordinates: Record<string, string[]> = {};
       const levels: Record<string, number> = {};
 
-      Object.entries(userData.teamProfiles).forEach(([name, p]: [string, any]) => {
-         positions[name] = normalizePosition(p.position);
-         areas[name] = String(p.area || '-').trim();
-         provinces[name] = String(p.province || '-').trim();
-         uplines[name] = String(p.upline || '').trim();
-         if (p.level !== undefined && p.level !== null && String(p.level).trim() !== '') {
+      Object.entries(userData.teamProfiles).forEach(
+        ([name, p]: [string, any]) => {
+          positions[name] = normalizePosition(p.position);
+          areas[name] = String(p.area || "-").trim();
+          provinces[name] = String(p.province || "-").trim();
+          uplines[name] = String(p.upline || "").trim();
+          if (
+            p.level !== undefined &&
+            p.level !== null &&
+            String(p.level).trim() !== ""
+          ) {
             const parsed = parseLevelStr(p.level);
             if (!isNaN(parsed)) {
-                levels[name] = parsed;
+              levels[name] = parsed;
             } else {
-                const rank = getPositionRank(p.position);
-                levels[name] = rank === 1 ? 5 : rank === 2 ? 4 : rank === 3 ? 3 : rank === 4 ? 2 : rank === 5 ? 1 : 0;
+              const rank = getPositionRank(p.position);
+              levels[name] =
+                rank === 1
+                  ? 5
+                  : rank === 2
+                    ? 4
+                    : rank === 3
+                      ? 3
+                      : rank === 4
+                        ? 2
+                        : rank === 5
+                          ? 1
+                          : 0;
             }
-         } else {
+          } else {
             const rank = getPositionRank(p.position);
-            levels[name] = rank === 1 ? 5 : rank === 2 ? 4 : rank === 3 ? 3 : rank === 4 ? 2 : rank === 5 ? 1 : 0;
-         }
-      });
+            levels[name] =
+              rank === 1
+                ? 5
+                : rank === 2
+                  ? 4
+                  : rank === 3
+                    ? 3
+                    : rank === 4
+                      ? 2
+                      : rank === 5
+                        ? 1
+                        : 0;
+          }
+        },
+      );
 
-      Object.keys(userData.teamProfiles).forEach(name => {
-         const directSubs: string[] = [];
-         Object.entries(userData.teamProfiles).forEach(([otherName, p]: [string, any]) => {
+      Object.keys(userData.teamProfiles).forEach((name) => {
+        const directSubs: string[] = [];
+        Object.entries(userData.teamProfiles).forEach(
+          ([otherName, p]: [string, any]) => {
             if (otherName !== name && p.upline) {
-               const cleanUp = cleanForMatch(p.upline);
-               const cleanMy = cleanForMatch(name);
-               if (cleanUp === cleanMy) {
-                  directSubs.push(otherName);
-               }
+              const cleanUp = cleanForMatch(p.upline);
+              const cleanMy = cleanForMatch(name);
+              if (cleanUp === cleanMy) {
+                directSubs.push(otherName);
+              }
             }
-         });
-         subordinates[name] = directSubs;
+          },
+        );
+        subordinates[name] = directSubs;
       });
 
-      setTeamPositions(prev => ({ ...prev, ...positions }));
-      setTeamAreas(prev => ({ ...prev, ...areas }));
-      setTeamProvinces(prev => ({ ...prev, ...provinces }));
-      setTeamUpLines(prev => ({ ...prev, ...uplines }));
-      setTeamSubordinates(prev => ({ ...prev, ...subordinates }));
-      setTeamLevels(prev => ({ ...prev, ...levels }));
+      setTeamPositions((prev) => ({ ...prev, ...positions }));
+      setTeamAreas((prev) => ({ ...prev, ...areas }));
+      setTeamProvinces((prev) => ({ ...prev, ...provinces }));
+      setTeamUpLines((prev) => ({ ...prev, ...uplines }));
+      setTeamSubordinates((prev) => ({ ...prev, ...subordinates }));
+      setTeamLevels((prev) => ({ ...prev, ...levels }));
     }
   }, [userData]);
 
-
-
-
   useEffect(() => {
-    const isBusinessAnalyst = (userData.position && cleanForMatch(userData.position) === 'businessanalyst') || (cleanForMatch(userData.name) === 'adityawiratama') || (cleanForMatch(userData.name) === 'aditya');
+    const isBusinessAnalyst =
+      (userData.position &&
+        cleanForMatch(userData.position) === "businessanalyst") ||
+      cleanForMatch(userData.name) === "adityawiratama" ||
+      cleanForMatch(userData.name) === "aditya";
     if (isBusinessAnalyst) {
-       const others = teamMembers.filter(m => cleanForMatch(m) !== cleanForMatch(userData.name));
-       setTeamSubordinates(prev => {
-          if (JSON.stringify(prev[userData.name]) === JSON.stringify(others)) return prev;
-          return {
-             ...prev,
-             [userData.name]: others
-          };
-       });
-       setTeamPositions(prev => {
-          if (prev[userData.name] === 'Business Analyst') return prev;
-          return {
-             ...prev,
-             [userData.name]: 'Business Analyst'
-          };
-       });
+      const others = teamMembers.filter(
+        (m) => cleanForMatch(m) !== cleanForMatch(userData.name),
+      );
+      setTeamSubordinates((prev) => {
+        if (JSON.stringify(prev[userData.name]) === JSON.stringify(others))
+          return prev;
+        return {
+          ...prev,
+          [userData.name]: others,
+        };
+      });
+      setTeamPositions((prev) => {
+        if (prev[userData.name] === "Business Analyst") return prev;
+        return {
+          ...prev,
+          [userData.name]: "Business Analyst",
+        };
+      });
     }
   }, [userData.name, userData.position, teamMembers, teamPositions]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     if (hour >= 4 && hour < 11) {
-      return { 
-        text: 'Selamat Pagi', 
-        imageUrl: 'https://lh3.googleusercontent.com/d/1AzKb-75MaU9hppqSdy2rS93t0tAPGkGi', 
-        color: 'text-amber-300' 
+      return {
+        text: "Selamat Pagi",
+        imageUrl:
+          "https://lh3.googleusercontent.com/d/1AzKb-75MaU9hppqSdy2rS93t0tAPGkGi",
+        color: "text-amber-300",
       };
     }
     if (hour >= 11 && hour < 15) {
-      return { 
-        text: 'Selamat Siang', 
-        imageUrl: 'https://lh3.googleusercontent.com/d/1ZpNkT7R57FppIpyPuTt2w9QtJdIwwuRp', 
-        color: 'text-yellow-300' 
+      return {
+        text: "Selamat Siang",
+        imageUrl:
+          "https://lh3.googleusercontent.com/d/1ZpNkT7R57FppIpyPuTt2w9QtJdIwwuRp",
+        color: "text-yellow-300",
       };
     }
     if (hour >= 15 && hour < 19) {
-      return { 
-        text: 'Selamat Sore', 
-        imageUrl: 'https://lh3.googleusercontent.com/d/12RsJXxDrH7aIAph0AJubB3i4w0gmkxcL', 
-        color: 'text-orange-400' 
+      return {
+        text: "Selamat Sore",
+        imageUrl:
+          "https://lh3.googleusercontent.com/d/12RsJXxDrH7aIAph0AJubB3i4w0gmkxcL",
+        color: "text-orange-400",
       };
     }
-    return { 
-      text: 'Selamat Malam', 
-      imageUrl: 'https://lh3.googleusercontent.com/d/1wzqPdQ5jvw7fOF2X76kM56l9l-4mUcLx', 
-      color: 'text-indigo-200' 
+    return {
+      text: "Selamat Malam",
+      imageUrl:
+        "https://lh3.googleusercontent.com/d/1wzqPdQ5jvw7fOF2X76kM56l9l-4mUcLx",
+      color: "text-indigo-200",
     };
   }, []);
 
-  const fetchWorkingData = async (presetData?: any[], presetDrSales?: any[]) => {
+  const fetchWorkingData = async (
+    presetData?: any[],
+    presetDrSales?: any[],
+  ) => {
     setIsFetchingData(true);
     setIsSyncing(true);
     try {
@@ -1681,23 +2370,37 @@ const Dashboard = ({
       } else {
         try {
           const [resp, respDr] = await Promise.all([
-            fetch(`${SCRIPT_URL}?action=getWorkingData&user=${encodeURIComponent(userData.name)}`),
-            fetch(`${SCRIPT_URL}?action=getDrSalesData&user=${encodeURIComponent(userData.name)}`)
+            fetch(
+              `${SCRIPT_URL}?action=getWorkingData&user=${encodeURIComponent(userData.name)}`,
+            ),
+            fetch(
+              `${SCRIPT_URL}?action=getDrSalesData&user=${encodeURIComponent(userData.name)}`,
+            ),
           ]);
           const [res, resDr] = await Promise.all([resp.json(), respDr.json()]);
 
-          if (res.status === 'success') {
-             combinedData = (res.data || []).map(item => {
-                 const cropVal = item.crops || item.Crops || item.crop || item.Crop || item.CROP || item.CROPS || 'Uncategorized Crops';
-                 return { ...item, crops: cropVal };
-             });
-             success = true;
+          if (res.status === "success") {
+            combinedData = (res.data || []).map((item) => {
+              const cropVal =
+                item.crops ||
+                item.Crops ||
+                item.crop ||
+                item.Crop ||
+                item.CROP ||
+                item.CROPS ||
+                "Uncategorized Crops";
+              return { ...item, crops: cropVal };
+            });
+            success = true;
           }
-          if (resDr.status === 'success') {
-             combinedDrSales = resDr.data || [];
+          if (resDr.status === "success") {
+            combinedDrSales = resDr.data || [];
           }
         } catch (apiErr) {
-          console.warn("API working/sales data load failed, falling back offline:", apiErr);
+          console.warn(
+            "API working/sales data load failed, falling back offline:",
+            apiErr,
+          );
         }
       }
 
@@ -1710,84 +2413,106 @@ const Dashboard = ({
       setRawWorkingData(combinedData);
 
       const groupedMap: Record<string, any> = {};
-      
+
       const parseTimestamp = (ts) => {
-         if (!ts) return 0;
-         if (typeof ts === 'string') {
-            if (ts.includes('/')) {
-               const parts = ts.split(/[\s/:]+/);
-               if (parts.length >= 3) {
-                  return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${parts[3] || '00'}:${parts[4] || '00'}:${parts[5] || '00'}`).getTime();
-               }
+        if (!ts) return 0;
+        if (typeof ts === "string") {
+          if (ts.includes("/")) {
+            const parts = ts.split(/[\s/:]+/);
+            if (parts.length >= 3) {
+              return new Date(
+                `${parts[2]}-${parts[1]}-${parts[0]}T${parts[3] || "00"}:${parts[4] || "00"}:${parts[5] || "00"}`,
+              ).getTime();
             }
-            const d = new Date(ts).getTime();
-            return isNaN(d) ? 0 : d;
-         }
-         const dt = new Date(ts).getTime();
-         return isNaN(dt) ? 0 : dt;
+          }
+          const d = new Date(ts).getTime();
+          return isNaN(d) ? 0 : d;
+        }
+        const dt = new Date(ts).getTime();
+        return isNaN(dt) ? 0 : dt;
       };
 
       // 1. Lakukan Grouping (Gabungkan LOT & Hybrid yang sama)
-      combinedData.forEach(d => {
-         const k = cleanForMatch(d.kiosk);
-         const l = cleanForMatch(d.lot);
-         const h = cleanForMatch(d.hybrid);
-         const key = `${k}_${l}_${h}`;
-         if (!groupedMap[key]) {
-             groupedMap[key] = { ...d };
-         } else {
-             // Ambil data dari timestamp terbaru (TIDAK ADA AKUMULASI QTY)
-             const timeExisting = parseTimestamp(groupedMap[key].timestamp);
-             const timeNew = parseTimestamp(d.timestamp);
-             if (timeNew > timeExisting) {
-                 groupedMap[key] = { ...d };
-             }
-         }
+      combinedData.forEach((d) => {
+        const k = cleanForMatch(d.kiosk);
+        const l = cleanForMatch(d.lot);
+        const h = cleanForMatch(d.hybrid);
+        const key = `${k}_${l}_${h}`;
+        if (!groupedMap[key]) {
+          groupedMap[key] = { ...d };
+        } else {
+          // Ambil data dari timestamp terbaru (TIDAK ADA AKUMULASI QTY)
+          const timeExisting = parseTimestamp(groupedMap[key].timestamp);
+          const timeNew = parseTimestamp(d.timestamp);
+          if (timeNew > timeExisting) {
+            groupedMap[key] = { ...d };
+          }
+        }
       });
 
       // 2. Filter dan format
-      const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
+      const monthsKeys = [
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "mei",
+        "jun",
+        "jul",
+        "ags",
+        "sep",
+        "okt",
+        "nov",
+        "des",
+      ];
       const currentMonthIdx = new Date().getMonth();
       const currentMonthKey = monthsKeys[currentMonthIdx];
       const prevMonthIdx = currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
       const prevMonthKey = monthsKeys[prevMonthIdx];
 
       const enrichedData = Object.values(groupedMap)
-        .filter(d => String(d.condition).trim().toLowerCase() !== 'habis') // Filter: Sembunyikan yang habis
+        .filter((d) => String(d.condition).trim().toLowerCase() !== "habis") // Filter: Sembunyikan yang habis
         .map((d, index) => {
-           const currVal = d[currentMonthKey] !== undefined ? Number(d[currentMonthKey]) : Number(d.stock || 0);
-           const prevVal = d[prevMonthKey] !== undefined ? Number(d[prevMonthKey]) : 0;
-           
-           let finalCondition = d.condition || 'tetap';
-           if (prevVal > 0) {
-              if (currVal > prevVal) finalCondition = 'bertambah';
-              else if (currVal < prevVal) finalCondition = 'berkurang';
-              else finalCondition = 'tetap';
-           } else {
-              if (currVal > 0) {
-                 finalCondition = (d.condition === 'new' || d.condition === 'baru' || d.isNew) ? 'new' : 'bertambah';
-              } else {
-                 finalCondition = 'tetap';
-              }
-           }
+          const currVal =
+            d[currentMonthKey] !== undefined
+              ? Number(d[currentMonthKey])
+              : Number(d.stock || 0);
+          const prevVal =
+            d[prevMonthKey] !== undefined ? Number(d[prevMonthKey]) : 0;
 
-           return {
-              ...d,
-              id: d.id || `db_${index}_${d.lot}`, // Fallback ID jika tidak ada
-              originalStock: d.stock,
-              originalUser: d.user || '',
-              condition: finalCondition,
-              isNew: false
-           };
+          let finalCondition = d.condition || "tetap";
+          if (prevVal > 0) {
+            if (currVal > prevVal) finalCondition = "bertambah";
+            else if (currVal < prevVal) finalCondition = "berkurang";
+            else finalCondition = "tetap";
+          } else {
+            if (currVal > 0) {
+              finalCondition =
+                d.condition === "new" || d.condition === "baru" || d.isNew
+                  ? "new"
+                  : "bertambah";
+            } else {
+              finalCondition = "tetap";
+            }
+          }
+
+          return {
+            ...d,
+            id: d.id || `db_${index}_${d.lot}`, // Fallback ID jika tidak ada
+            originalStock: d.stock,
+            originalUser: d.user || "",
+            condition: finalCondition,
+            isNew: false,
+          };
         });
-        
+
       setWorkingData(enrichedData);
       setDeletedItems([]);
-    } catch (e) { 
-      console.warn("Error processing working data", e); 
-    } finally { 
+    } catch (e) {
+      console.warn("Error processing working data", e);
+    } finally {
       setIsFetchingData(false);
-      setIsSyncing(false); 
+      setIsSyncing(false);
     }
   };
 
@@ -1798,7 +2523,9 @@ const Dashboard = ({
           if (isBusinessAnalyst) {
             setSelectedKiosk("Not Applicable for Business Analyst");
           } else {
-            const myKiosksData = kiosks.filter(k => matchNames(k.pic, userData.name));
+            const myKiosksData = kiosks.filter((k) =>
+              matchNames(k.pic, userData.name),
+            );
             if (myKiosksData.length > 0) setSelectedKiosk(myKiosksData[0].name);
             else {
               if (kiosks.length > 0) setSelectedKiosk(kiosks[0].name);
@@ -1814,14 +2541,23 @@ const Dashboard = ({
         let fetchedKiosks = [];
         let success = false;
         try {
-          const resp = await fetch(`${SCRIPT_URL}?action=getChannels&user=${encodeURIComponent(userData.name)}`);
+          const resp = await fetch(
+            `${SCRIPT_URL}?action=getChannels&user=${encodeURIComponent(userData.name)}`,
+          );
           const res = await resp.json();
-          if (res.status === 'success' && Array.isArray(res.data) && res.data.length > 0) {
+          if (
+            res.status === "success" &&
+            Array.isArray(res.data) &&
+            res.data.length > 0
+          ) {
             fetchedKiosks = res.data;
             success = true;
           }
         } catch (apiErr) {
-          console.warn("API channels load failed, falling back offline:", apiErr);
+          console.warn(
+            "API channels load failed, falling back offline:",
+            apiErr,
+          );
         }
 
         if (!success) {
@@ -1829,27 +2565,31 @@ const Dashboard = ({
         }
 
         setKiosks(fetchedKiosks);
-        
+
         if (channelsRefreshKey === 0) {
           if (isBusinessAnalyst) {
             setSelectedKiosk("Not Applicable for Business Analyst");
           } else {
-            const myKiosksData = fetchedKiosks.filter(k => matchNames(k.pic, userData.name));
+            const myKiosksData = fetchedKiosks.filter((k) =>
+              matchNames(k.pic, userData.name),
+            );
             if (myKiosksData.length > 0) setSelectedKiosk(myKiosksData[0].name);
             else {
-              if (fetchedKiosks.length > 0) setSelectedKiosk(fetchedKiosks[0].name);
+              if (fetchedKiosks.length > 0)
+                setSelectedKiosk(fetchedKiosks[0].name);
               else setSelectedKiosk("No Channel Assigned");
             }
           }
         }
-      } catch (e) { 
-        console.warn("Error loading channels", e); 
+      } catch (e) {
+        console.warn("Error loading channels", e);
         setKiosks(OFFLINE_KIOSKS);
         if (channelsRefreshKey === 0) {
-          if (OFFLINE_KIOSKS.length > 0) setSelectedKiosk(OFFLINE_KIOSKS[0].name);
+          if (OFFLINE_KIOSKS.length > 0)
+            setSelectedKiosk(OFFLINE_KIOSKS[0].name);
         }
-      } finally { 
-         setIsChannelsLoading(false); 
+      } finally {
+        setIsChannelsLoading(false);
       }
     };
     fetchChannels();
@@ -1865,10 +2605,12 @@ const Dashboard = ({
       setIsSyncing(true);
 
       try {
-        const resp = await fetch(`${SCRIPT_URL}?action=getInitialData&user=${encodeURIComponent(userData.name)}`);
+        const resp = await fetch(
+          `${SCRIPT_URL}?action=getInitialData&user=${encodeURIComponent(userData.name)}`,
+        );
         const res = await resp.json();
 
-        if (res.status === 'success' && res.data) {
+        if (res.status === "success" && res.data) {
           // 1. Employees
           if (res.data.employees && res.data.employees.length > 0) {
             setEmployees(res.data.employees);
@@ -1877,40 +2619,65 @@ const Dashboard = ({
           }
 
           // 2. Channels
-          const fetchedKiosks = res.data.channels && res.data.channels.length > 0 ? res.data.channels : OFFLINE_KIOSKS;
+          const fetchedKiosks =
+            res.data.channels && res.data.channels.length > 0
+              ? res.data.channels
+              : OFFLINE_KIOSKS;
           setKiosks(fetchedKiosks);
 
           if (channelsRefreshKey === 0) {
             if (isBusinessAnalyst) {
               setSelectedKiosk("Not Applicable for Business Analyst");
             } else {
-              const myKiosksData = fetchedKiosks.filter(k => matchNames(k.pic, userData.name));
-              if (myKiosksData.length > 0) setSelectedKiosk(myKiosksData[0].name);
+              const myKiosksData = fetchedKiosks.filter((k) =>
+                matchNames(k.pic, userData.name),
+              );
+              if (myKiosksData.length > 0)
+                setSelectedKiosk(myKiosksData[0].name);
               else {
-                if (fetchedKiosks.length > 0) setSelectedKiosk(fetchedKiosks[0].name);
+                if (fetchedKiosks.length > 0)
+                  setSelectedKiosk(fetchedKiosks[0].name);
                 else setSelectedKiosk("No Channel Assigned");
               }
             }
           }
 
           // 3. Working & Sales Data
-          const rawWorking = res.data.workingData && res.data.workingData.length > 0 ? res.data.workingData : OFFLINE_WORKING_DATA;
-          console.log('rawWorking', rawWorking);
-          const mappedWorking = rawWorking.map(item => {
-              const cropVal = item.crops || item.Crops || item.crop || item.Crop || item.CROP || item.CROPS || 'Uncategorized Crops';
-              return { ...item, crops: cropVal };
+          const rawWorking =
+            res.data.workingData && res.data.workingData.length > 0
+              ? res.data.workingData
+              : OFFLINE_WORKING_DATA;
+          console.log("rawWorking", rawWorking);
+          const mappedWorking = rawWorking.map((item) => {
+            const cropVal =
+              item.crops ||
+              item.Crops ||
+              item.crop ||
+              item.Crop ||
+              item.CROP ||
+              item.CROPS ||
+              "Uncategorized Crops";
+            return { ...item, crops: cropVal };
           });
 
-          const drSales = res.data.drSalesData && res.data.drSalesData.length > 0 ? res.data.drSalesData : OFFLINE_DR_SALES;
+          const drSales =
+            res.data.drSalesData && res.data.drSalesData.length > 0
+              ? res.data.drSalesData
+              : OFFLINE_DR_SALES;
 
           // Enriches and updates states inside fetchWorkingData
           await fetchWorkingData(mappedWorking, drSales);
         } else {
-          console.warn("getInitialData not supported or empty, doing live individual parallel fetching.");
+          console.warn(
+            "getInitialData not supported or empty, doing live individual parallel fetching.",
+          );
           await loadIndividualDataFallback();
         }
       } catch (err) {
-        console.warn("Failed unified initial data fetch, falling back to parallel individual live fetches:", err);
+        console.warn(
+          "Failed unified initial data fetch, falling back to parallel individual live fetches:",
+          err,
+        );
         await loadIndividualDataFallback();
       } finally {
         setIsEmployeesLoading(false);
@@ -1924,47 +2691,65 @@ const Dashboard = ({
       try {
         const [respEmp, respChan, respWork, respDr] = await Promise.all([
           fetch(`${SCRIPT_URL}?action=getEmployees`),
-          fetch(`${SCRIPT_URL}?action=getChannels&user=${encodeURIComponent(userData.name)}`),
-          fetch(`${SCRIPT_URL}?action=getWorkingData&user=${encodeURIComponent(userData.name)}`),
-          fetch(`${SCRIPT_URL}?action=getDrSalesData&user=${encodeURIComponent(userData.name)}`)
+          fetch(
+            `${SCRIPT_URL}?action=getChannels&user=${encodeURIComponent(userData.name)}`,
+          ),
+          fetch(
+            `${SCRIPT_URL}?action=getWorkingData&user=${encodeURIComponent(userData.name)}`,
+          ),
+          fetch(
+            `${SCRIPT_URL}?action=getDrSalesData&user=${encodeURIComponent(userData.name)}`,
+          ),
         ]);
         const [resEmp, resChan, resWork, resDr] = await Promise.all([
           respEmp.json(),
           respChan.json(),
           respWork.json(),
-          respDr.json()
+          respDr.json(),
         ]);
 
-        if (resEmp.status === 'success') {
+        if (resEmp.status === "success") {
           setEmployees(resEmp.data || []);
         } else {
           setEmployees(OFFLINE_EMPLOYEES);
         }
 
-        const fetchedKiosks = resChan.status === 'success' ? (resChan.data || []) : OFFLINE_KIOSKS;
+        const fetchedKiosks =
+          resChan.status === "success" ? resChan.data || [] : OFFLINE_KIOSKS;
         setKiosks(fetchedKiosks);
 
         if (channelsRefreshKey === 0) {
           if (isBusinessAnalyst) {
             setSelectedKiosk("Not Applicable for Business Analyst");
           } else {
-            const myKiosksData = fetchedKiosks.filter(k => matchNames(k.pic, userData.name));
+            const myKiosksData = fetchedKiosks.filter((k) =>
+              matchNames(k.pic, userData.name),
+            );
             if (myKiosksData.length > 0) setSelectedKiosk(myKiosksData[0].name);
             else {
-              if (fetchedKiosks.length > 0) setSelectedKiosk(fetchedKiosks[0].name);
+              if (fetchedKiosks.length > 0)
+                setSelectedKiosk(fetchedKiosks[0].name);
               else setSelectedKiosk("No Channel Assigned");
             }
           }
         }
 
         let mappedWorking = OFFLINE_WORKING_DATA;
-        if (resWork.status === 'success') {
-          mappedWorking = (resWork.data || []).map(item => {
-            const cropVal = item.crops || item.Crops || item.crop || item.Crop || item.CROP || item.CROPS || 'Uncategorized Crops';
+        if (resWork.status === "success") {
+          mappedWorking = (resWork.data || []).map((item) => {
+            const cropVal =
+              item.crops ||
+              item.Crops ||
+              item.crop ||
+              item.Crop ||
+              item.CROP ||
+              item.CROPS ||
+              "Uncategorized Crops";
             return { ...item, crops: cropVal };
           });
         }
-        const drSales = resDr.status === 'success' ? (resDr.data || []) : OFFLINE_DR_SALES;
+        const drSales =
+          resDr.status === "success" ? resDr.data || [] : OFFLINE_DR_SALES;
 
         await fetchWorkingData(mappedWorking, drSales);
       } catch (fallbackErr) {
@@ -1980,34 +2765,46 @@ const Dashboard = ({
 
   useEffect(() => {
     if (teamMembers.length > 1) {
-      if (!mappingPic || mappingPic === '' || (mappingPic !== 'ALL_TEAM' && !teamMembers.some(m => cleanForMatch(m) === cleanForMatch(mappingPic)))) {
-        setMappingPic('ALL_TEAM');
+      if (
+        !mappingPic ||
+        mappingPic === "" ||
+        (mappingPic !== "ALL_TEAM" &&
+          !teamMembers.some(
+            (m) => cleanForMatch(m) === cleanForMatch(mappingPic),
+          ))
+      ) {
+        setMappingPic("ALL_TEAM");
       }
     } else {
-      setMappingPic(userData.name || '');
+      setMappingPic(userData.name || "");
     }
   }, [userData.name, teamMembers, mappingPic]);
 
   useEffect(() => {
     setIsLotNotFound(false);
-    if (lotNo.length < 3) { setLotIntel(null); return; }
+    if (lotNo.length < 3) {
+      setLotIntel(null);
+      return;
+    }
     const checkLot = async () => {
       setIsLotChecking(true);
       try {
-        const resp = await fetch(`${SCRIPT_URL}?action=getLotInfo&lot=${encodeURIComponent(lotNo)}`);
+        const resp = await fetch(
+          `${SCRIPT_URL}?action=getLotInfo&lot=${encodeURIComponent(lotNo)}`,
+        );
         const res = await resp.json();
-        if (res.status === 'success' && res.data) {
+        if (res.status === "success" && res.data) {
           setLotIntel(res.data);
           setIsLotNotFound(false);
         } else {
           setLotIntel(null);
           setIsLotNotFound(true);
         }
-      } catch (e) { 
-        setLotIntel(null); 
+      } catch (e) {
+        setLotIntel(null);
         setIsLotNotFound(true);
-      } finally { 
-        setIsLotChecking(false); 
+      } finally {
+        setIsLotChecking(false);
       }
     };
     const timer = setTimeout(checkLot, 600);
@@ -2016,177 +2813,265 @@ const Dashboard = ({
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsDropdownOpen(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target))
+        setIsDropdownOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleAddLocal = () => {
-      if (!lotNo || !qty) return;
-      const cleanLot = lotNo.trim().toUpperCase();
-      const cleanHybrid = lotIntel?.desc || 'Unknown';
-      
-      const existingItemIndex = workingData.findIndex(item => 
-          cleanForMatch(item.kiosk) === cleanForMatch(selectedKiosk) && 
-          cleanForMatch(item.lot) === cleanForMatch(cleanLot) && 
-          cleanForMatch(item.hybrid) === cleanForMatch(cleanHybrid)
-      );
+    if (!lotNo || !qty) return;
+    const cleanLot = lotNo.trim().toUpperCase();
+    const cleanHybrid = lotIntel?.desc || "Unknown";
 
-       if (existingItemIndex !== -1) {
-          setWorkingData(prev => prev.map((item, index) => {
-              if (index === existingItemIndex) {
-                  const nQty = Number(qty);
-                  const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
-                  const currentMonthIdx = new Date().getMonth();
-                  const currentMonthKey = monthsKeys[currentMonthIdx];
-                  const prevMonthIdx = currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
-                  const prevMonthKey = monthsKeys[prevMonthIdx];
-                  const prevVal = item[prevMonthKey] !== undefined ? Number(item[prevMonthKey]) : 0;
-                  
-                  let cond = 'tetap';
-                  if (prevVal === 0) {
-                      cond = item.isNew ? 'new' : (nQty > 0 ? 'bertambah' : 'tetap');
-                  } else {
-                      if (nQty > prevVal) cond = 'bertambah';
-                      else if (nQty < prevVal) cond = 'berkurang';
-                      else cond = 'tetap';
-                  }
+    const existingItemIndex = workingData.findIndex(
+      (item) =>
+        cleanForMatch(item.kiosk) === cleanForMatch(selectedKiosk) &&
+        cleanForMatch(item.lot) === cleanForMatch(cleanLot) &&
+        cleanForMatch(item.hybrid) === cleanForMatch(cleanHybrid),
+    );
 
-                  return { 
-                      ...item, 
-                      stock: nQty, 
-                      condition: cond, 
-                      user: userData.name,
-                      [currentMonthKey]: nQty
-                  };
-              }
-              return item;
-          }));
-      } else {
-          const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
-          const currentMonthKey = monthsKeys[new Date().getMonth()];
-          const newItem = {
-              id: 'local_' + Date.now(),
-              lot: cleanLot,
-              hybrid: cleanHybrid,
-              crops: lotIntel?.crops || '',
-              drDate: lotIntel?.drDate || '',
-              stock: Number(qty),
-              aging: lotIntel?.aging || '-',
-              expired: lotIntel?.expDate || 'N/A',
-              kiosk: selectedKiosk,
-              condition: 'new', // BARU
-              isNew: true,
-              originalStock: Number(qty),
+    if (existingItemIndex !== -1) {
+      setWorkingData((prev) =>
+        prev.map((item, index) => {
+          if (index === existingItemIndex) {
+            const nQty = Number(qty);
+            const monthsKeys = [
+              "jan",
+              "feb",
+              "mar",
+              "apr",
+              "mei",
+              "jun",
+              "jul",
+              "ags",
+              "sep",
+              "okt",
+              "nov",
+              "des",
+            ];
+            const currentMonthIdx = new Date().getMonth();
+            const currentMonthKey = monthsKeys[currentMonthIdx];
+            const prevMonthIdx =
+              currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
+            const prevMonthKey = monthsKeys[prevMonthIdx];
+            const prevVal =
+              item[prevMonthKey] !== undefined ? Number(item[prevMonthKey]) : 0;
+
+            let cond = "tetap";
+            if (prevVal === 0) {
+              cond = item.isNew ? "new" : nQty > 0 ? "bertambah" : "tetap";
+            } else {
+              if (nQty > prevVal) cond = "bertambah";
+              else if (nQty < prevVal) cond = "berkurang";
+              else cond = "tetap";
+            }
+
+            return {
+              ...item,
+              stock: nQty,
+              condition: cond,
               user: userData.name,
-              [currentMonthKey]: Number(qty)
-          };
-          setWorkingData(prev => [newItem, ...prev]);
-      }
-      setLotNo(''); setQty(''); setLotIntel(null); setIsLotNotFound(false);
+              [currentMonthKey]: nQty,
+            };
+          }
+          return item;
+        }),
+      );
+    } else {
+      const monthsKeys = [
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "mei",
+        "jun",
+        "jul",
+        "ags",
+        "sep",
+        "okt",
+        "nov",
+        "des",
+      ];
+      const currentMonthKey = monthsKeys[new Date().getMonth()];
+      const newItem = {
+        id: "local_" + Date.now(),
+        lot: cleanLot,
+        hybrid: cleanHybrid,
+        crops: lotIntel?.crops || "",
+        drDate: lotIntel?.drDate || "",
+        stock: Number(qty),
+        aging: lotIntel?.aging || "-",
+        expired: lotIntel?.expDate || "N/A",
+        kiosk: selectedKiosk,
+        condition: "new", // BARU
+        isNew: true,
+        originalStock: Number(qty),
+        user: userData.name,
+        [currentMonthKey]: Number(qty),
+      };
+      setWorkingData((prev) => [newItem, ...prev]);
+    }
+    setLotNo("");
+    setQty("");
+    setLotIntel(null);
+    setIsLotNotFound(false);
   };
 
   const handleEditLocal = (id, newQty) => {
-      const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
-      const currentMonthIdx = new Date().getMonth();
-      const currentMonthKey = monthsKeys[currentMonthIdx];
-      const prevMonthIdx = currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
-      const prevMonthKey = monthsKeys[prevMonthIdx];
+    const monthsKeys = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "mei",
+      "jun",
+      "jul",
+      "ags",
+      "sep",
+      "okt",
+      "nov",
+      "des",
+    ];
+    const currentMonthIdx = new Date().getMonth();
+    const currentMonthKey = monthsKeys[currentMonthIdx];
+    const prevMonthIdx = currentMonthIdx === 0 ? 11 : currentMonthIdx - 1;
+    const prevMonthKey = monthsKeys[prevMonthIdx];
 
-      setWorkingData(prev => prev.map(item => {
-          if (item.id === id) {
-              const nQty = Number(newQty);
-              const prevVal = item[prevMonthKey] !== undefined ? Number(item[prevMonthKey]) : 0;
-              
-              let cond = 'tetap';
-              if (prevVal === 0) {
-                  cond = item.isNew ? 'new' : (nQty > 0 ? 'bertambah' : 'tetap');
-              } else {
-                  if (nQty > prevVal) cond = 'bertambah';
-                  else if (nQty < prevVal) cond = 'berkurang';
-                  else cond = 'tetap';
-              }
-              return { 
-                  ...item, 
-                  stock: nQty, 
-                  condition: cond, 
-                  user: userData.name,
-                  [currentMonthKey]: nQty
-              };
+    setWorkingData((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          const nQty = Number(newQty);
+          const prevVal =
+            item[prevMonthKey] !== undefined ? Number(item[prevMonthKey]) : 0;
+
+          let cond = "tetap";
+          if (prevVal === 0) {
+            cond = item.isNew ? "new" : nQty > 0 ? "bertambah" : "tetap";
+          } else {
+            if (nQty > prevVal) cond = "bertambah";
+            else if (nQty < prevVal) cond = "berkurang";
+            else cond = "tetap";
           }
-          return item;
-      }));
-      setEditModal({ isOpen: false, item: null });
+          return {
+            ...item,
+            stock: nQty,
+            condition: cond,
+            user: userData.name,
+            [currentMonthKey]: nQty,
+          };
+        }
+        return item;
+      }),
+    );
+    setEditModal({ isOpen: false, item: null });
   };
 
   const handleDeleteLocal = () => {
-      const id = deleteModal.item.id;
-      const isNew = deleteModal.item.isNew;
-      if (!isNew) {
-          const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
-          const currentMonthKey = monthsKeys[new Date().getMonth()];
-          // Jangan dihapus dari list, ubah saja condition-nya jadi 'habis'
-          setWorkingData(prev => prev.map(i => i.id === id ? { 
-              ...i, 
-              stock: 0, 
-              condition: 'habis', 
-              user: userData.name,
-              [currentMonthKey]: 0
-          } : i)); 
-      } else {
-          setWorkingData(prev => prev.filter(i => i.id !== id)); 
-      }
-      setDeleteModal({ isOpen: false, item: null });
+    const id = deleteModal.item.id;
+    const isNew = deleteModal.item.isNew;
+    if (!isNew) {
+      const monthsKeys = [
+        "jan",
+        "feb",
+        "mar",
+        "apr",
+        "mei",
+        "jun",
+        "jul",
+        "ags",
+        "sep",
+        "okt",
+        "nov",
+        "des",
+      ];
+      const currentMonthKey = monthsKeys[new Date().getMonth()];
+      // Jangan dihapus dari list, ubah saja condition-nya jadi 'habis'
+      setWorkingData((prev) =>
+        prev.map((i) =>
+          i.id === id
+            ? {
+                ...i,
+                stock: 0,
+                condition: "habis",
+                user: userData.name,
+                [currentMonthKey]: 0,
+              }
+            : i,
+        ),
+      );
+    } else {
+      setWorkingData((prev) => prev.filter((i) => i.id !== id));
+    }
+    setDeleteModal({ isOpen: false, item: null });
   };
 
-  const hasChanges = workingData.some(i => i.isNew || i.condition !== 'tetap' || (String(i.user || '').trim().toLowerCase() !== String(i.originalUser || '').trim().toLowerCase())) || deletedItems.length > 0;
+  const hasChanges =
+    workingData.some(
+      (i) =>
+        i.isNew ||
+        i.condition !== "tetap" ||
+        String(i.user || "")
+          .trim()
+          .toLowerCase() !==
+          String(i.originalUser || "")
+            .trim()
+            .toLowerCase(),
+    ) || deletedItems.length > 0;
 
   const handleUploadActivity = async () => {
-      // Ambil hanya list yang tampil (berdasarkan Kiosk yang terpilih)
-      const currentKioskItems = workingData.filter(item => item.kiosk === selectedKiosk);
-      if (currentKioskItems.length === 0) return;
+    // Ambil hanya list yang tampil (berdasarkan Kiosk yang terpilih)
+    const currentKioskItems = workingData.filter(
+      (item) => item.kiosk === selectedKiosk,
+    );
+    if (currentKioskItems.length === 0) return;
 
-      setIsFetchingData(true);
-      setIsSyncing(true);
-      try {
-        await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'batchActivity', 
-            user: userData.name,
-            kiosk: selectedKiosk,
-            area: userData.area,
-            items: currentKioskItems // Kirim semua data yang terlihat di layer (dan yg status 'habis')
-          })
-        });
-        fetchWorkingData();
-      } catch (e) { 
-        console.warn("Activity sync failed, using offline fallback capabilities:", e); 
-        setIsFetchingData(false);
-        setIsSyncing(false);
-      }
+    setIsFetchingData(true);
+    setIsSyncing(true);
+    try {
+      await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "batchActivity",
+          user: userData.name,
+          kiosk: selectedKiosk,
+          area: userData.area,
+          items: currentKioskItems, // Kirim semua data yang terlihat di layer (dan yg status 'habis')
+        }),
+      });
+      fetchWorkingData();
+    } catch (e) {
+      console.warn(
+        "Activity sync failed, using offline fallback capabilities:",
+        e,
+      );
+      setIsFetchingData(false);
+      setIsSyncing(false);
+    }
   };
 
   const handleConsolidateDatabase = async () => {
     setIsConsolidatingDb(true);
     try {
       const resp = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({
-          action: 'consolidateDatabase',
-          user: userData.name
-        })
+          action: "consolidateDatabase",
+          user: userData.name,
+        }),
       });
       const res = await resp.json();
-      if (res.status === 'success') {
-        setConsolidationSuccessMsg('Konsolidasi database berhasil disimpan!');
-        setTimeout(() => setConsolidationSuccessMsg(''), 5000);
+      if (res.status === "success") {
+        setConsolidationSuccessMsg("Konsolidasi database berhasil disimpan!");
+        setTimeout(() => setConsolidationSuccessMsg(""), 5000);
         await fetchWorkingData(); // Refresh data lists
       } else {
-        alert("Gagal melakukan konsolidasi: " + (res.message || "Unknown error"));
+        alert(
+          "Gagal melakukan konsolidasi: " + (res.message || "Unknown error"),
+        );
       }
     } catch (e) {
       console.warn("Consolidation fetch failed:", e);
@@ -2196,81 +3081,106 @@ const Dashboard = ({
     }
   };
 
-  const handleEditPartnerSave = async (id: any, newPic: any, additionalData: any = {}) => {
+  const handleEditPartnerSave = async (
+    id: any,
+    newPic: any,
+    additionalData: any = {},
+  ) => {
     setIsActionLoading(true);
     try {
       const isAdd = !id || additionalData.isAdd;
-      const resp = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ 
-          action: isAdd ? 'addPartner' : 'updatePartner', 
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: isAdd ? "addPartner" : "updatePartner",
           id: id || "partner_" + Date.now(),
           pic: newPic,
-          name: additionalData.name || '',
-          category: additionalData.category || '',
+          name: additionalData.name || "",
+          category: additionalData.category || "",
           user: userData.name,
-          group: userData?.group || '',
-          province: userData?.province || ''
-        })
+          group: userData?.group || "",
+          province: userData?.province || "",
+        }),
       });
       const res = await resp.json();
-      if (res.status === 'success') {
-        setPartnerEditModal({ isOpen: false, item: null }); 
-        setChannelsRefreshKey(prev => prev + 1); 
+      if (res.status === "success") {
+        setPartnerEditModal({ isOpen: false, item: null });
+        setChannelsRefreshKey((prev) => prev + 1);
       }
-    } catch (e) { console.warn("Gagal update data partner", e); } 
-    finally { setIsActionLoading(false); }
+    } catch (e) {
+      console.warn("Gagal update data partner", e);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
   const handleDeletePartnerConfirm = async () => {
     if (!partnerDeleteModal.item?.id) return;
     setIsActionLoading(true);
     try {
-      const resp = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'deletePartner', id: partnerDeleteModal.item.id, user: userData.name })
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "deletePartner",
+          id: partnerDeleteModal.item.id,
+          user: userData.name,
+        }),
       });
-      const res = await resp.json(); 
-      if (res.status === 'success') {
-        setPartnerDeleteModal({ isOpen: false, item: null }); 
-        setChannelsRefreshKey(prev => prev + 1); 
+      const res = await resp.json();
+      if (res.status === "success") {
+        setPartnerDeleteModal({ isOpen: false, item: null });
+        setChannelsRefreshKey((prev) => prev + 1);
       }
-    } catch (e) { console.warn("Gagal hapus data partner", e); } 
-    finally { setIsActionLoading(false); }
+    } catch (e) {
+      console.warn("Gagal hapus data partner", e);
+    } finally {
+      setIsActionLoading(false);
+    }
   };
 
-  const handleEditEmployeeSave = async (originalName: string, updatedFields: any, isAdd = false) => {
+  const handleEditEmployeeSave = async (
+    originalName: string,
+    updatedFields: any,
+    isAdd = false,
+  ) => {
     if (!isAdd && !originalName) return;
     setIsActionLoading(true);
     try {
-      const resp = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ 
-          action: 'updateEmployee', 
-          originalName: isAdd ? '' : originalName, 
-          ...updatedFields
-        })
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "updateEmployee",
+          originalName: isAdd ? "" : originalName,
+          ...updatedFields,
+        }),
       });
       const res = await resp.json();
-      if (res.status === 'success') {
+      if (res.status === "success") {
         if (isAdd) {
-          setEmployees(prev => [...prev, { ...updatedFields }]);
+          setEmployees((prev) => [...prev, { ...updatedFields }]);
         } else {
-          if (userData && cleanForMatch(userData.name) === cleanForMatch(originalName)) {
-            setUserData(prev => prev ? { ...prev, ...updatedFields } : null);
+          if (
+            userData &&
+            cleanForMatch(userData.name) === cleanForMatch(originalName)
+          ) {
+            setUserData((prev) =>
+              prev ? { ...prev, ...updatedFields } : null,
+            );
           }
-          setEmployees(prev => prev.map(emp => {
-            if (cleanForMatch(emp.name) === cleanForMatch(originalName)) {
-              return { ...emp, ...updatedFields };
-            }
-            return emp;
-          }));
+          setEmployees((prev) =>
+            prev.map((emp) => {
+              if (cleanForMatch(emp.name) === cleanForMatch(originalName)) {
+                return { ...emp, ...updatedFields };
+              }
+              return emp;
+            }),
+          );
         }
-        setEmployeeEditModal({ isOpen: false, item: null }); 
-        setEmployeesRefreshKey(prev => prev + 1); 
+        setEmployeeEditModal({ isOpen: false, item: null });
+        setEmployeesRefreshKey((prev) => prev + 1);
       }
     } catch (e) {
       console.warn("Gagal update data karyawan", e);
@@ -2283,16 +3193,25 @@ const Dashboard = ({
     if (!employeeDeleteModal.item?.name) return;
     setIsActionLoading(true);
     try {
-      const resp = await fetch(SCRIPT_URL, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'deleteEmployee', name: employeeDeleteModal.item.name })
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "deleteEmployee",
+          name: employeeDeleteModal.item.name,
+        }),
       });
-      const res = await resp.json(); 
-      if (res.status === 'success') {
-        setEmployees(prev => prev.filter(emp => cleanForMatch(emp.name) !== cleanForMatch(employeeDeleteModal.item?.name)));
-        setEmployeeDeleteModal({ isOpen: false, item: null }); 
-        setEmployeesRefreshKey(prev => prev + 1); 
+      const res = await resp.json();
+      if (res.status === "success") {
+        setEmployees((prev) =>
+          prev.filter(
+            (emp) =>
+              cleanForMatch(emp.name) !==
+              cleanForMatch(employeeDeleteModal.item?.name),
+          ),
+        );
+        setEmployeeDeleteModal({ isOpen: false, item: null });
+        setEmployeesRefreshKey((prev) => prev + 1);
       }
     } catch (e) {
       console.warn("Gagal hapus data karyawan", e);
@@ -2301,25 +3220,31 @@ const Dashboard = ({
     }
   };
 
-   const teamStats = useMemo(() => {
+  const teamStats = useMemo(() => {
     const memberChannelsMap: Record<string, typeof kiosks> = {};
     const kioskCategoryMap: Record<string, string> = {};
-    
-    teamMembers.forEach(memberName => {
+
+    teamMembers.forEach((memberName) => {
       memberChannelsMap[cleanForMatch(memberName)] = [];
     });
 
-    kiosks.forEach(k => {
-      const resolvedPic = getDdaOfUser(k.pic || '', userData?.name, userData?.teamProfiles);
+    kiosks.forEach((k) => {
+      const resolvedPic = getDdaOfUser(
+        k.pic || "",
+        userData?.name,
+        userData?.teamProfiles,
+      );
       const cleanPic = cleanForMatch(resolvedPic);
       const cleanKiosk = cleanForMatch(k.name);
-      
-      kioskCategoryMap[cleanKiosk] = String(k.category || 'Uncategorized').trim();
+
+      kioskCategoryMap[cleanKiosk] = String(
+        k.category || "Uncategorized",
+      ).trim();
 
       if (memberChannelsMap[cleanPic]) {
         memberChannelsMap[cleanPic].push(k);
       } else {
-        const match = teamMembers.find(m => cleanForMatch(m) === cleanPic);
+        const match = teamMembers.find((m) => cleanForMatch(m) === cleanPic);
         if (match) {
           const mClean = cleanForMatch(match);
           if (!memberChannelsMap[mClean]) memberChannelsMap[mClean] = [];
@@ -2328,96 +3253,147 @@ const Dashboard = ({
       }
     });
 
-    const monthKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
+    const monthKeys = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "mei",
+      "jun",
+      "jul",
+      "ags",
+      "sep",
+      "okt",
+      "nov",
+      "des",
+    ];
     const currentMonthIdx = new Date().getMonth();
     const currentMonthKey = monthKeys[currentMonthIdx];
     const updColName = `upd_${currentMonthKey}`;
     const visitedKiosksByUser: Record<string, Set<string>> = {};
-    
-    rawWorkingData.forEach(item => {
-        if (!item.kiosk) return;
-        const updVal = String(item[updColName] || '').trim().toLowerCase();
-        if (updVal === 'sales') {
-             const cleanKiosk = cleanForMatch(item.kiosk);
-             const resolvedUser = getDdaOfUser(String(item.user || ''), userData?.name, userData?.teamProfiles);
-             const cleanUser = cleanForMatch(resolvedUser);
-             
-             let finalUser = cleanUser;
-             if (!teamMembers.some(m => cleanForMatch(m) === cleanUser)) {
-                 const match = teamMembers.find(m => cleanForMatch(m) === cleanUser);
-                 if (match) finalUser = cleanForMatch(match);
-             }
 
-             if (!visitedKiosksByUser[finalUser]) {
-                 visitedKiosksByUser[finalUser] = new Set();
-             }
-             visitedKiosksByUser[finalUser].add(cleanKiosk);
+    rawWorkingData.forEach((item) => {
+      if (!item.kiosk) return;
+      const updVal = String(item[updColName] || "")
+        .trim()
+        .toLowerCase();
+      if (updVal === "sales") {
+        const cleanKiosk = cleanForMatch(item.kiosk);
+        const resolvedUser = getDdaOfUser(
+          String(item.user || ""),
+          userData?.name,
+          userData?.teamProfiles,
+        );
+        const cleanUser = cleanForMatch(resolvedUser);
+
+        let finalUser = cleanUser;
+        if (!teamMembers.some((m) => cleanForMatch(m) === cleanUser)) {
+          const match = teamMembers.find((m) => cleanForMatch(m) === cleanUser);
+          if (match) finalUser = cleanForMatch(match);
         }
+
+        if (!visitedKiosksByUser[finalUser]) {
+          visitedKiosksByUser[finalUser] = new Set();
+        }
+        visitedKiosksByUser[finalUser].add(cleanKiosk);
+      }
     });
 
-    return teamMembers.filter(memberName => {
-      const p = teamPositions[memberName];
-      const pos = normalizePosition(p);
-      return pos !== 'Unknown';
-    }).map(memberName => {
-      const cleanMember = cleanForMatch(memberName);
-      const memberChannels = memberChannelsMap[cleanMember] || [];
-      const visitedKiosks = visitedKiosksByUser[cleanMember] || new Set();
-      
-      const counts: Record<string, any> = {};
-      
-      memberChannels.forEach(c => {
-         const cat = String(c.category || 'Uncategorized').trim();
-         if (!counts[cat]) counts[cat] = { total: 0, visited: 0 };
-         counts[cat].total += 1;
-      });
+    return teamMembers
+      .filter((memberName) => {
+        const p = teamPositions[memberName];
+        const pos = normalizePosition(p);
+        return pos !== "Unknown";
+      })
+      .map((memberName) => {
+        const cleanMember = cleanForMatch(memberName);
+        const memberChannels = memberChannelsMap[cleanMember] || [];
+        const visitedKiosks = visitedKiosksByUser[cleanMember] || new Set();
 
-      let totalVisited = 0;
-      visitedKiosks.forEach(kClean => {
-         const cat = kioskCategoryMap[kClean] || 'Uncategorized';
-         if (!counts[cat]) counts[cat] = { total: 0, visited: 0 };
-         counts[cat].visited += 1;
-         totalVisited += 1;
-      });
+        const counts: Record<string, any> = {};
 
-      return {
-        name: memberName,
-        total: memberChannels.length,
-        totalVisited: totalVisited,
-        counts: counts
-      };
-    }).sort((a, b) => compareMembersByLevel(a.name, b.name, teamLevels, teamPositions, userData));
-  }, [kiosks, teamMembers, rawWorkingData, teamPositions, userData, filterBelowMonth]);
+        memberChannels.forEach((c) => {
+          const cat = String(c.category || "Uncategorized").trim();
+          if (!counts[cat]) counts[cat] = { total: 0, visited: 0 };
+          counts[cat].total += 1;
+        });
+
+        let totalVisited = 0;
+        visitedKiosks.forEach((kClean) => {
+          const cat = kioskCategoryMap[kClean] || "Uncategorized";
+          if (!counts[cat]) counts[cat] = { total: 0, visited: 0 };
+          counts[cat].visited += 1;
+          totalVisited += 1;
+        });
+
+        return {
+          name: memberName,
+          total: memberChannels.length,
+          totalVisited: totalVisited,
+          counts: counts,
+        };
+      })
+      .sort((a, b) =>
+        compareMembersByLevel(
+          a.name,
+          b.name,
+          teamLevels,
+          teamPositions,
+          userData,
+        ),
+      );
+  }, [
+    kiosks,
+    teamMembers,
+    rawWorkingData,
+    teamPositions,
+    userData,
+    filterBelowMonth,
+  ]);
 
   const getStatsForPic = (name: string) => {
     const cleanName = cleanForMatch(name);
-    const stat = teamStats.find(s => cleanForMatch(s.name) === cleanName);
-    
+    const stat = teamStats.find((s) => cleanForMatch(s.name) === cleanName);
+
     if (!stat) {
-        return { visited: 0, total: 0, percentage: 0 };
+      return { visited: 0, total: 0, percentage: 0 };
     }
-    const percentage = stat.total > 0 ? Math.round((stat.totalVisited / stat.total) * 100) : 0;
+    const percentage =
+      stat.total > 0 ? Math.round((stat.totalVisited / stat.total) * 100) : 0;
     return { visited: stat.totalVisited, total: stat.total, percentage };
   };
 
   const mappedChannelsByPic = useMemo(() => {
-    const enrichedKiosks = kiosks.map(k => {
-       const resolvedPic = getDdaOfUser(k.pic || '', userData?.name, userData?.teamProfiles);
-       return { ...k, pic: resolvedPic };
+    const enrichedKiosks = kiosks.map((k) => {
+      const resolvedPic = getDdaOfUser(
+        k.pic || "",
+        userData?.name,
+        userData?.teamProfiles,
+      );
+      return { ...k, pic: resolvedPic };
     });
-    
-    const isAll = !mappingPic || cleanForMatch(mappingPic) === 'allteam' || cleanForMatch(mappingPic) === 'all_team';
+
+    const isAll =
+      !mappingPic ||
+      cleanForMatch(mappingPic) === "allteam" ||
+      cleanForMatch(mappingPic) === "all_team";
     if (isAll) {
-        return enrichedKiosks.filter(k => {
-            return teamMembers.some(m => matchNames(k.pic, m));
-        });
+      return enrichedKiosks.filter((k) => {
+        return teamMembers.some((m) => matchNames(k.pic, m));
+      });
     }
-    return enrichedKiosks.filter(k => matchNames(k.pic, mappingPic));
+    return enrichedKiosks.filter((k) => matchNames(k.pic, mappingPic));
   }, [kiosks, mappingPic, teamMembers, userData]);
 
   const mappingCategories = useMemo(() => {
-    const rawCats = [...new Set<string>(mappedChannelsByPic.map(k => String(k.category || 'Uncategorized').trim()))];
-    const order = ['Distributor', 'R1', 'R2'];
+    const rawCats = [
+      ...new Set<string>(
+        mappedChannelsByPic.map((k) =>
+          String(k.category || "Uncategorized").trim(),
+        ),
+      ),
+    ];
+    const order = ["Distributor", "R1", "R2"];
     return rawCats.sort((a, b) => {
       const idxA = order.indexOf(a);
       const idxB = order.indexOf(b);
@@ -2429,8 +3405,12 @@ const Dashboard = ({
   }, [mappedChannelsByPic]);
 
   const allCategories = useMemo(() => {
-    const rawCats = [...new Set<string>(kiosks.map(k => String(k.category || 'Uncategorized').trim()))];
-    const order = ['Distributor', 'R1', 'R2'];
+    const rawCats = [
+      ...new Set<string>(
+        kiosks.map((k) => String(k.category || "Uncategorized").trim()),
+      ),
+    ];
+    const order = ["Distributor", "R1", "R2"];
     return rawCats.sort((a, b) => {
       const idxA = order.indexOf(a);
       const idxB = order.indexOf(b);
@@ -2442,30 +3422,51 @@ const Dashboard = ({
   }, [kiosks]);
 
   useEffect(() => {
-    if (mappingCategories.length > 0 && !mappingCategories.includes(mappingCategory)) {
-        setMappingCategory(mappingCategories[0]);
+    if (
+      mappingCategories.length > 0 &&
+      !mappingCategories.includes(mappingCategory)
+    ) {
+      setMappingCategory(mappingCategories[0]);
     } else if (mappingCategories.length === 0) {
-        setMappingCategory('');
+      setMappingCategory("");
     }
   }, [mappingCategories, mappingCategory]);
 
   const displayedPartnerChannels = useMemo(() => {
-    return mappedChannelsByPic.filter(k => String(k.category || 'Uncategorized').trim() === mappingCategory);
+    return mappedChannelsByPic.filter(
+      (k) => String(k.category || "Uncategorized").trim() === mappingCategory,
+    );
   }, [mappedChannelsByPic, mappingCategory]);
 
   const myKiosks = useMemo(() => {
-    const isBusinessAnalyst = (userData.position && cleanForMatch(userData.position) === 'businessanalyst') || (cleanForMatch(userData.name) === 'adityawiratama') || (cleanForMatch(userData.name) === 'aditya');
+    const isBusinessAnalyst =
+      (userData.position &&
+        cleanForMatch(userData.position) === "businessanalyst") ||
+      cleanForMatch(userData.name) === "adityawiratama" ||
+      cleanForMatch(userData.name) === "aditya";
     if (isBusinessAnalyst) {
-       return kiosks;
+      return kiosks;
     }
-    return kiosks.filter(k => matchNames(k.pic, userData.name));
+    return kiosks.filter((k) => matchNames(k.pic, userData.name));
   }, [kiosks, userData.name, userData.position]);
-  
-  const filteredKiosks = useMemo(() => myKiosks.filter(k => String(k.name || '').toLowerCase().includes(searchTerm.toLowerCase())), [myKiosks, searchTerm]);
+
+  const filteredKiosks = useMemo(
+    () =>
+      myKiosks.filter((k) =>
+        String(k.name || "")
+          .toLowerCase()
+          .includes(searchTerm.toLowerCase()),
+      ),
+    [myKiosks, searchTerm],
+  );
 
   useEffect(() => {
     if (myKiosks.length > 0) {
-      if (selectedKiosk === 'Loading Kiosk...' || selectedKiosk === 'No Channel Assigned' || !myKiosks.some(k => k.name === selectedKiosk)) {
+      if (
+        selectedKiosk === "Loading Kiosk..." ||
+        selectedKiosk === "No Channel Assigned" ||
+        !myKiosks.some((k) => k.name === selectedKiosk)
+      ) {
         setSelectedKiosk(myKiosks[0].name);
       }
     } else {
@@ -2475,169 +3476,225 @@ const Dashboard = ({
 
   // Fungsi Parser Tanggal POG
   const parseDateForPog = (timestamp) => {
-      if (!timestamp) return new Date(0);
-      if (timestamp instanceof Date) return timestamp;
-      let d = new Date(timestamp);
-      if (!isNaN(d.getTime())) return d;
+    if (!timestamp) return new Date(0);
+    if (timestamp instanceof Date) return timestamp;
+    let d = new Date(timestamp);
+    if (!isNaN(d.getTime())) return d;
 
-      if (typeof timestamp === 'string' && timestamp.includes('/')) {
-          const parts = timestamp.split(/[\s/:]+/);
-          if (parts.length >= 3) {
-              let year = parts[2];
-              if (year.length === 2 && !isNaN(Number(year))) {
-                  year = '20' + year;
-              }
-              const dStr = `${year}-${parts[1]}-${parts[0]}T${parts[3]||'00'}:${parts[4]||'00'}:${parts[5]||'00'}`;
-              d = new Date(dStr);
-          }
+    if (typeof timestamp === "string" && timestamp.includes("/")) {
+      const parts = timestamp.split(/[\s/:]+/);
+      if (parts.length >= 3) {
+        let year = parts[2];
+        if (year.length === 2 && !isNaN(Number(year))) {
+          year = "20" + year;
+        }
+        const dStr = `${year}-${parts[1]}-${parts[0]}T${parts[3] || "00"}:${parts[4] || "00"}:${parts[5] || "00"}`;
+        d = new Date(dStr);
       }
-      return isNaN(d.getTime()) ? new Date(0) : d;
+    }
+    return isNaN(d.getTime()) ? new Date(0) : d;
   };
 
   // Kalkulasi & Filter Data POG
   const pogDataProcessed = useMemo(() => {
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      const startOfCurrentMonthTime = new Date(currentYear, currentMonth, 1).getTime();
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const startOfCurrentMonthTime = new Date(
+      currentYear,
+      currentMonth,
+      1,
+    ).getTime();
 
-      const picToUplineMap: Record<string, string> = {};
-      kiosks.forEach(k => {
-          const p = String(k.pic || '').trim();
-          const u = String(k.upline || '').trim();
-          if (p && u) {
-              picToUplineMap[p.toLowerCase()] = normalizeName(u);
-          }
-      });
-      picToUplineMap['listianto'] = 'AGUS HERDIANTO';
+    const picToUplineMap: Record<string, string> = {};
+    kiosks.forEach((k) => {
+      const p = String(k.pic || "").trim();
+      const u = String(k.upline || "").trim();
+      if (p && u) {
+        picToUplineMap[p.toLowerCase()] = normalizeName(u);
+      }
+    });
+    picToUplineMap["listianto"] = "AGUS HERDIANTO";
 
-      // Pre-compute maps to avoid nested array scans (O(N*M) -> O(N+M))
-      const kiosksMapByCleanName: Record<string, any> = {};
-      kiosks.forEach(k => {
-          kiosksMapByCleanName[cleanForMatch(k.name)] = k;
-      });
+    // Pre-compute maps to avoid nested array scans (O(N*M) -> O(N+M))
+    const kiosksMapByCleanName: Record<string, any> = {};
+    kiosks.forEach((k) => {
+      kiosksMapByCleanName[cleanForMatch(k.name)] = k;
+    });
 
-      const teamMembersMapByCleanName: Record<string, string> = {};
-      teamMembers.forEach(m => {
-          teamMembersMapByCleanName[cleanForMatch(m)] = m;
-      });
-      const getTeamMemberMatch = (name: string): string | undefined => {
-          const clean = cleanForMatch(name);
-          if (teamMembersMapByCleanName[clean]) return teamMembersMapByCleanName[clean];
-          return teamMembers.find(m => matchNames(m, name));
-      };
+    const teamMembersMapByCleanName: Record<string, string> = {};
+    teamMembers.forEach((m) => {
+      teamMembersMapByCleanName[cleanForMatch(m)] = m;
+    });
+    const getTeamMemberMatch = (name: string): string | undefined => {
+      const clean = cleanForMatch(name);
+      if (teamMembersMapByCleanName[clean])
+        return teamMembersMapByCleanName[clean];
+      return teamMembers.find((m) => matchNames(m, name));
+    };
 
-      const lotMap: Record<string, any> = {};
+    const lotMap: Record<string, any> = {};
 
-      const resolveHierarchy = (kioskName: string, itemUser?: string) => {
-          const cleanKName = cleanForMatch(kioskName);
-          const kInfo = kiosksMapByCleanName[cleanKName] || {};
-          const rawPic = normalizeName(String(itemUser || kInfo.pic || 'Unknown'));
-          const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-          let upline = normalizeName(String(kInfo.upline || ''));
-          if (pic.toLowerCase() === 'listianto') {
-              upline = 'AGUS HERDIANTO';
-          } else {
-              const matchedMember = getTeamMemberMatch(pic);
-              const foundUp = getFromRecord<string>(teamUpLines, matchedMember || pic);
-              if (foundUp) {
-                  upline = normalizeName(foundUp);
-              } else if (!upline && pic !== 'Unknown') {
-                  const foundUpline = picToUplineMap[pic.toLowerCase()];
-                  if (foundUpline) upline = normalizeName(foundUpline);
-              }
-          }
-          
-          let area = '-';
-          const cleanPic = cleanForMatch(pic);
-          const matchedMember = getTeamMemberMatch(pic);
-          const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-          if (foundArea) {
-              area = foundArea;
-          } else if (cleanPic === cleanForMatch(userData?.name)) {
-              area = userData?.area || '-';
-          }
-          
-          const category = String(kInfo.category || 'Uncategorized').trim();
-          return { pic, upline, area, category, kInfo };
-      };
+    const resolveHierarchy = (kioskName: string, itemUser?: string) => {
+      const cleanKName = cleanForMatch(kioskName);
+      const kInfo = kiosksMapByCleanName[cleanKName] || {};
+      const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
+      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      let upline = normalizeName(String(kInfo.upline || ""));
+      if (pic.toLowerCase() === "listianto") {
+        upline = "AGUS HERDIANTO";
+      } else {
+        const matchedMember = getTeamMemberMatch(pic);
+        const foundUp = getFromRecord<string>(
+          teamUpLines,
+          matchedMember || pic,
+        );
+        if (foundUp) {
+          upline = normalizeName(foundUp);
+        } else if (!upline && pic !== "Unknown") {
+          const foundUpline = picToUplineMap[pic.toLowerCase()];
+          if (foundUpline) upline = normalizeName(foundUpline);
+        }
+      }
 
-      const monthCols = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
-      const prevMonthIndex = currentMonth - 1;
-      const prevMonthCol = prevMonthIndex >= 0 ? monthCols[prevMonthIndex] : null;
-      const targetMonthCol = monthCols[currentMonth];
+      let area = "-";
+      const cleanPic = cleanForMatch(pic);
+      const matchedMember = getTeamMemberMatch(pic);
+      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+      if (foundArea) {
+        area = foundArea;
+      } else if (cleanPic === cleanForMatch(userData?.name)) {
+        area = userData?.area || "-";
+      }
 
-      rawWorkingData.forEach(d => {
-          const h = resolveHierarchy(d.kiosk, d.user);
-          const crops = d.crops && String(d.crops).trim() !== '' ? d.crops : 'Uncategorized Crops';
+      const category = String(kInfo.category || "Uncategorized").trim();
+      return { pic, upline, area, category, kInfo };
+    };
 
-          const dateObj = parseDateForPog(d.timestamp);
-          const t = dateObj.getTime();
+    const monthCols = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "mei",
+      "jun",
+      "jul",
+      "ags",
+      "sep",
+      "okt",
+      "nov",
+      "des",
+    ];
+    const prevMonthIndex = currentMonth - 1;
+    const prevMonthCol = prevMonthIndex >= 0 ? monthCols[prevMonthIndex] : null;
+    const targetMonthCol = monthCols[currentMonth];
 
-          const key = `${d.kiosk}_${String(d.lot).trim().toUpperCase()}_${d.hybrid}`;
-          if (!lotMap[key]) {
-              lotMap[key] = { 
-                  kiosk: d.kiosk, 
-                  lot: String(d.lot).toUpperCase(), 
-                  hybrid: d.hybrid, 
-                  pic: h.pic, 
-                  upline: h.upline, 
-                  area: h.area, 
-                  category: h.category, 
-                  crops, 
-                  lastQty: 0, 
-                  currentQty: 0, 
-                  latestTime: 0, 
-                  latestRow: null,
-                  sellIn: 0, // representing Stock in
-                  sellOut: 0, // representing Stock out
-                  idleStock: 0, // representing idle stock
-                  pogAccumulated: 0
-              };
-          }
+    rawWorkingData.forEach((d) => {
+      const h = resolveHierarchy(d.kiosk, d.user);
+      const crops =
+        d.crops && String(d.crops).trim() !== ""
+          ? d.crops
+          : "Uncategorized Crops";
 
-          if (t > lotMap[key].latestTime || lotMap[key].latestRow === null) {
-              lotMap[key].latestTime = t;
-              lotMap[key].latestRow = d;
-          }
+      const dateObj = parseDateForPog(d.timestamp);
+      const t = dateObj.getTime();
 
-          const pogVal = Number(d.pog) || 0;
-          if (pogVal < 0) {
-              lotMap[key].sellIn += Math.abs(pogVal);
-          } else if (pogVal > 0) {
-              lotMap[key].sellOut += pogVal;
-              lotMap[key].pogAccumulated += pogVal;
-          }
-      });
+      const key = `${d.kiosk}_${String(d.lot).trim().toUpperCase()}_${d.hybrid}`;
+      if (!lotMap[key]) {
+        lotMap[key] = {
+          kiosk: d.kiosk,
+          lot: String(d.lot).toUpperCase(),
+          hybrid: d.hybrid,
+          pic: h.pic,
+          upline: h.upline,
+          area: h.area,
+          category: h.category,
+          crops,
+          lastQty: 0,
+          currentQty: 0,
+          latestTime: 0,
+          latestRow: null,
+          sellIn: 0, // representing Stock in
+          sellOut: 0, // representing Stock out
+          idleStock: 0, // representing idle stock
+          pogAccumulated: 0,
+        };
+      }
 
-      // Extract opening (lastQty) and ending (currentQty) directly from monthly columns of the latest row
-      Object.values(lotMap).forEach((item: any) => {
-          if (item.latestRow) {
-              const row = item.latestRow;
-              item.lastQty = (prevMonthCol && row[prevMonthCol] !== undefined && Number(row[prevMonthCol]) > 0) ? Number(row[prevMonthCol]) : (Number(row.lastQty) || 0);
-              item.currentQty = (targetMonthCol && row[targetMonthCol] !== undefined && Number(row[targetMonthCol]) > 0) ? Number(row[targetMonthCol]) : (Number(row.stock) !== undefined ? Number(row.stock) : (Number(row.currentQty) || Number(row.stock) || 0));
-              
-              const condClean = String(row.condition || '').trim().toLowerCase();
-              const isTetap = condClean === 'tetap' || condClean === '';
-              item.idleStock = isTetap ? item.currentQty : 0;
-          }
-      });
+      if (t > lotMap[key].latestTime || lotMap[key].latestRow === null) {
+        lotMap[key].latestTime = t;
+        lotMap[key].latestRow = d;
+      }
 
-      return Object.values(lotMap).map((item: any) => {
-          return {
-              ...item,
-              pog: item.pogAccumulated,
-          };
-      }).filter(item => item.lastQty > 0 || item.currentQty > 0 || item.sellIn > 0 || item.sellOut > 0 || item.idleStock > 0);
-  }, [rawWorkingData, drSalesData, kiosks, userData, teamAreas, teamMembers, teamUpLines]);
+      const pogVal = Number(d.pog) || 0;
+      if (pogVal < 0) {
+        lotMap[key].sellIn += Math.abs(pogVal);
+      } else if (pogVal > 0) {
+        lotMap[key].sellOut += pogVal;
+        lotMap[key].pogAccumulated += pogVal;
+      }
+    });
+
+    // Extract opening (lastQty) and ending (currentQty) directly from monthly columns of the latest row
+    Object.values(lotMap).forEach((item: any) => {
+      if (item.latestRow) {
+        const row = item.latestRow;
+        item.lastQty =
+          prevMonthCol &&
+          row[prevMonthCol] !== undefined &&
+          Number(row[prevMonthCol]) > 0
+            ? Number(row[prevMonthCol])
+            : Number(row.lastQty) || 0;
+        item.currentQty =
+          targetMonthCol &&
+          row[targetMonthCol] !== undefined &&
+          Number(row[targetMonthCol]) > 0
+            ? Number(row[targetMonthCol])
+            : Number(row.stock) !== undefined
+              ? Number(row.stock)
+              : Number(row.currentQty) || Number(row.stock) || 0;
+
+        const condClean = String(row.condition || "")
+          .trim()
+          .toLowerCase();
+        const isTetap = condClean === "tetap" || condClean === "";
+        item.idleStock = isTetap ? item.currentQty : 0;
+      }
+    });
+
+    return Object.values(lotMap)
+      .map((item: any) => {
+        return {
+          ...item,
+          pog: item.pogAccumulated,
+        };
+      })
+      .filter(
+        (item) =>
+          item.lastQty > 0 ||
+          item.currentQty > 0 ||
+          item.sellIn > 0 ||
+          item.sellOut > 0 ||
+          item.idleStock > 0,
+      );
+  }, [
+    rawWorkingData,
+    drSalesData,
+    kiosks,
+    userData,
+    teamAreas,
+    teamMembers,
+    teamUpLines,
+  ]);
 
   // Dynamic filter options based on raw data
   const filterOptions = useMemo(() => {
-    const rawData = rawWorkingData && rawWorkingData.length > 0 ? rawWorkingData : [];
-    
+    const rawData =
+      rawWorkingData && rawWorkingData.length > 0 ? rawWorkingData : [];
+
     // 1. Months
     const monthsSet = new Set<string>();
-    rawData.forEach(d => {
+    rawData.forEach((d) => {
       if (d.timestamp) {
         const dateObj = parseDateForPog(d.timestamp);
         if (dateObj.getTime() > 0) {
@@ -2648,8 +3705,8 @@ const Dashboard = ({
       }
     });
     const months = Array.from(monthsSet).sort((a, b) => {
-      const partsA = a.split(' ');
-      const partsB = b.split(' ');
+      const partsA = a.split(" ");
+      const partsB = b.split(" ");
       const yearDiff = parseInt(partsA[1], 10) - parseInt(partsB[1], 10);
       if (yearDiff !== 0) return yearDiff;
       return INDO_MONTHS.indexOf(partsA[0]) - INDO_MONTHS.indexOf(partsB[0]);
@@ -2657,39 +3714,44 @@ const Dashboard = ({
 
     // 2. Channel (Category)
     const channelsSet = new Set<string>();
-    kiosks.forEach(k => {
+    kiosks.forEach((k) => {
       if (k.category) channelsSet.add(String(k.category).trim());
     });
     const channels = Array.from(channelsSet).filter(Boolean).sort();
 
     // 3. Material (Hybrid)
     const materialsSet = new Set<string>();
-    rawData.forEach(d => {
+    rawData.forEach((d) => {
       if (d.hybrid) materialsSet.add(String(d.hybrid).trim());
     });
     const materials = Array.from(materialsSet).filter(Boolean).sort();
 
     // 4. Team (PIC)
     const teamsSet = new Set<string>();
-    rawData.forEach(d => {
+    rawData.forEach((d) => {
       const cleanKName = cleanForMatch(d.kiosk);
-      const kInfo = kiosks.find(k => cleanForMatch(k.name) === cleanKName) || {};
-      const rawPic = normalizeName(String(d.user || kInfo.pic || 'Unknown'));
+      const kInfo =
+        kiosks.find((k) => cleanForMatch(k.name) === cleanKName) || {};
+      const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
       const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-      if (pic && pic !== 'Unknown') teamsSet.add(String(pic).trim());
+      if (pic && pic !== "Unknown") teamsSet.add(String(pic).trim());
     });
     const teams = Array.from(teamsSet).filter(Boolean).sort();
 
     // 5. Area
     const areasSet = new Set<string>();
-    rawData.forEach(d => {
+    rawData.forEach((d) => {
       const cleanKName = cleanForMatch(d.kiosk);
-      const kInfo = kiosks.find(k => cleanForMatch(k.name) === cleanKName) || {};
-      const rawPic = normalizeName(String(d.user || kInfo.pic || 'Unknown'));
+      const kInfo =
+        kiosks.find((k) => cleanForMatch(k.name) === cleanKName) || {};
+      const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
       const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-      const matchedMember = teamMembers.find(m => matchNames(m, pic));
-      const area = getFromRecord<string>(teamAreas, matchedMember || pic) || kInfo.area || d.area;
-      if (area && area !== '-') areasSet.add(String(area).trim());
+      const matchedMember = teamMembers.find((m) => matchNames(m, pic));
+      const area =
+        getFromRecord<string>(teamAreas, matchedMember || pic) ||
+        kInfo.area ||
+        d.area;
+      if (area && area !== "-") areasSet.add(String(area).trim());
     });
     const areas = Array.from(areasSet).filter(Boolean).sort();
 
@@ -2698,7 +3760,7 @@ const Dashboard = ({
       channels,
       materials,
       teams,
-      areas
+      areas,
     };
   }, [rawWorkingData, kiosks, userData, teamMembers, teamAreas]);
 
@@ -2707,10 +3769,10 @@ const Dashboard = ({
     const now = new Date();
     let targetMonth = now.getMonth();
     let targetYear = now.getFullYear();
-    const isFilteredMonth = filterBelowMonth && filterBelowMonth !== 'All';
+    const isFilteredMonth = filterBelowMonth && filterBelowMonth !== "All";
 
     if (isFilteredMonth) {
-      const parts = filterBelowMonth.split(' ');
+      const parts = filterBelowMonth.split(" ");
       const mIdx = INDO_MONTHS.indexOf(parts[0]);
       if (mIdx !== -1) {
         targetMonth = mIdx;
@@ -2718,189 +3780,288 @@ const Dashboard = ({
       }
     }
 
-    const startOfTargetMonthTime = new Date(targetYear, targetMonth, 1).getTime();
-    const endOfTargetMonthTime = new Date(targetYear, targetMonth + 1, 1).getTime();
+    const startOfTargetMonthTime = new Date(
+      targetYear,
+      targetMonth,
+      1,
+    ).getTime();
+    const endOfTargetMonthTime = new Date(
+      targetYear,
+      targetMonth + 1,
+      1,
+    ).getTime();
 
-    const monthCols = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
+    const monthCols = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "mei",
+      "jun",
+      "jul",
+      "ags",
+      "sep",
+      "okt",
+      "nov",
+      "des",
+    ];
     const prevMonthIndex = targetMonth - 1;
     const prevMonthCol = prevMonthIndex >= 0 ? monthCols[prevMonthIndex] : null;
     const targetMonthCol = monthCols[targetMonth];
 
     const picToUplineMap: Record<string, string> = {};
-    kiosks.forEach(k => {
-        const p = String(k.pic || '').trim();
-        const u = String(k.upline || '').trim();
-        if (p && u) {
-            picToUplineMap[p.toLowerCase()] = normalizeName(u);
-        }
+    kiosks.forEach((k) => {
+      const p = String(k.pic || "").trim();
+      const u = String(k.upline || "").trim();
+      if (p && u) {
+        picToUplineMap[p.toLowerCase()] = normalizeName(u);
+      }
     });
-    picToUplineMap['listianto'] = 'AGUS HERDIANTO';
+    picToUplineMap["listianto"] = "AGUS HERDIANTO";
 
     const kiosksMapByCleanName: Record<string, any> = {};
-    kiosks.forEach(k => {
-        kiosksMapByCleanName[cleanForMatch(k.name)] = k;
+    kiosks.forEach((k) => {
+      kiosksMapByCleanName[cleanForMatch(k.name)] = k;
     });
 
     const teamMembersMapByCleanName: Record<string, string> = {};
-    teamMembers.forEach(m => {
-        teamMembersMapByCleanName[cleanForMatch(m)] = m;
+    teamMembers.forEach((m) => {
+      teamMembersMapByCleanName[cleanForMatch(m)] = m;
     });
     const getTeamMemberMatch = (name: string): string | undefined => {
-        const clean = cleanForMatch(name);
-        if (teamMembersMapByCleanName[clean]) return teamMembersMapByCleanName[clean];
-        return teamMembers.find(m => matchNames(m, name));
+      const clean = cleanForMatch(name);
+      if (teamMembersMapByCleanName[clean])
+        return teamMembersMapByCleanName[clean];
+      return teamMembers.find((m) => matchNames(m, name));
     };
 
     const lotMap: Record<string, any> = {};
 
     const resolveHierarchy = (kioskName: string, itemUser?: string) => {
-        const cleanKName = cleanForMatch(kioskName);
-        const kInfo = kiosksMapByCleanName[cleanKName] || {};
-        const rawPic = normalizeName(String(itemUser || kInfo.pic || 'Unknown'));
-        const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-        let upline = normalizeName(String(kInfo.upline || ''));
-        if (pic.toLowerCase() === 'listianto') {
-            upline = 'AGUS HERDIANTO';
-        }
-        
-        let area = '-';
-        const cleanPic = cleanForMatch(pic);
-        const matchedMember = getTeamMemberMatch(pic);
-        const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-        if (foundArea) {
-            area = foundArea;
-        } else if (cleanPic === cleanForMatch(userData?.name)) {
-            area = userData?.area || '-';
-        }
-        
-        const category = String(kInfo.category || 'Uncategorized').trim();
-        return { pic, upline, area, category, kInfo };
+      const cleanKName = cleanForMatch(kioskName);
+      const kInfo = kiosksMapByCleanName[cleanKName] || {};
+      const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
+      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      let upline = normalizeName(String(kInfo.upline || ""));
+      if (pic.toLowerCase() === "listianto") {
+        upline = "AGUS HERDIANTO";
+      }
+
+      let area = "-";
+      const cleanPic = cleanForMatch(pic);
+      const matchedMember = getTeamMemberMatch(pic);
+      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+      if (foundArea) {
+        area = foundArea;
+      } else if (cleanPic === cleanForMatch(userData?.name)) {
+        area = userData?.area || "-";
+      }
+
+      const category = String(kInfo.category || "Uncategorized").trim();
+      return { pic, upline, area, category, kInfo };
     };
 
-    const rawData = rawWorkingData && rawWorkingData.length > 0 ? rawWorkingData : [];
+    const rawData =
+      rawWorkingData && rawWorkingData.length > 0 ? rawWorkingData : [];
 
-    rawData.forEach(d => {
-        const dateObj = parseDateForPog(d.timestamp);
-        const t = dateObj.getTime();
+    rawData.forEach((d) => {
+      const dateObj = parseDateForPog(d.timestamp);
+      const t = dateObj.getTime();
 
-        // If filtering by specific month, skip transactions that happened after the end of this target month
-        if (isFilteredMonth && t >= endOfTargetMonthTime) {
-            return;
-        }
+      // If filtering by specific month, skip transactions that happened after the end of this target month
+      if (isFilteredMonth && t >= endOfTargetMonthTime) {
+        return;
+      }
 
-        const h = resolveHierarchy(d.kiosk, d.user);
-        const crops = d.crops && String(d.crops).trim() !== '' ? d.crops : 'Uncategorized Crops';
+      const h = resolveHierarchy(d.kiosk, d.user);
+      const crops =
+        d.crops && String(d.crops).trim() !== ""
+          ? d.crops
+          : "Uncategorized Crops";
 
-        const key = `${d.kiosk}_${String(d.lot).trim().toUpperCase()}_${d.hybrid}`;
-        if (!lotMap[key]) {
-            lotMap[key] = { 
-                kiosk: d.kiosk, 
-                lot: String(d.lot).toUpperCase(), 
-                hybrid: d.hybrid, 
-                pic: h.pic, 
-                upline: h.upline, 
-                area: h.area, 
-                category: h.category, 
-                crops, 
-                lastQty: 0, 
-                currentQty: 0, 
-                latestTime: 0, 
-                latestRow: null,
-                sellIn: 0,
-                sellOut: 0,
-                idleStock: 0,
-                pogAccumulated: 0
-            };
-        }
+      const key = `${d.kiosk}_${String(d.lot).trim().toUpperCase()}_${d.hybrid}`;
+      if (!lotMap[key]) {
+        lotMap[key] = {
+          kiosk: d.kiosk,
+          lot: String(d.lot).toUpperCase(),
+          hybrid: d.hybrid,
+          pic: h.pic,
+          upline: h.upline,
+          area: h.area,
+          category: h.category,
+          crops,
+          lastQty: 0,
+          currentQty: 0,
+          latestTime: 0,
+          latestRow: null,
+          sellIn: 0,
+          sellOut: 0,
+          idleStock: 0,
+          pogAccumulated: 0,
+        };
+      }
 
-        if (t > lotMap[key].latestTime || lotMap[key].latestRow === null) {
-            lotMap[key].latestTime = t;
-            lotMap[key].latestRow = d;
-        }
+      if (t > lotMap[key].latestTime || lotMap[key].latestRow === null) {
+        lotMap[key].latestTime = t;
+        lotMap[key].latestRow = d;
+      }
 
-        const pogVal = Number(d.pog) || 0;
-        if (pogVal < 0) {
-            lotMap[key].sellIn += Math.abs(pogVal);
-        } else if (pogVal > 0) {
-            lotMap[key].sellOut += pogVal;
-            lotMap[key].pogAccumulated += pogVal;
-        }
+      const pogVal = Number(d.pog) || 0;
+      if (pogVal < 0) {
+        lotMap[key].sellIn += Math.abs(pogVal);
+      } else if (pogVal > 0) {
+        lotMap[key].sellOut += pogVal;
+        lotMap[key].pogAccumulated += pogVal;
+      }
     });
 
     // Extract opening (lastQty) and ending (currentQty) directly from monthly columns of the latest row
     Object.values(lotMap).forEach((item: any) => {
-        if (item.latestRow) {
-            const row = item.latestRow;
-            item.lastQty = (prevMonthCol && row[prevMonthCol] !== undefined && Number(row[prevMonthCol]) > 0) ? Number(row[prevMonthCol]) : (Number(row.lastQty) || 0);
-            item.currentQty = (targetMonthCol && row[targetMonthCol] !== undefined && Number(row[targetMonthCol]) > 0) ? Number(row[targetMonthCol]) : (Number(row.stock) !== undefined ? Number(row.stock) : (Number(row.currentQty) || Number(row.stock) || 0));
-            
-            const condClean = String(row.condition || '').trim().toLowerCase();
-            const isTetap = condClean === 'tetap' || condClean === '';
-            item.idleStock = isTetap ? item.currentQty : 0;
-        }
+      if (item.latestRow) {
+        const row = item.latestRow;
+        item.lastQty =
+          prevMonthCol &&
+          row[prevMonthCol] !== undefined &&
+          Number(row[prevMonthCol]) > 0
+            ? Number(row[prevMonthCol])
+            : Number(row.lastQty) || 0;
+        item.currentQty =
+          targetMonthCol &&
+          row[targetMonthCol] !== undefined &&
+          Number(row[targetMonthCol]) > 0
+            ? Number(row[targetMonthCol])
+            : Number(row.stock) !== undefined
+              ? Number(row.stock)
+              : Number(row.currentQty) || Number(row.stock) || 0;
+
+        const condClean = String(row.condition || "")
+          .trim()
+          .toLowerCase();
+        const isTetap = condClean === "tetap" || condClean === "";
+        item.idleStock = isTetap ? item.currentQty : 0;
+      }
     });
 
-    let result = Object.values(lotMap).map((item: any) => {
+    let result = Object.values(lotMap)
+      .map((item: any) => {
         return {
-            ...item,
-            pog: item.pogAccumulated,
+          ...item,
+          pog: item.pogAccumulated,
         };
-    }).filter(item => item.lastQty > 0 || item.currentQty > 0 || item.sellIn > 0 || item.sellOut > 0 || item.idleStock > 0);
+      })
+      .filter(
+        (item) =>
+          item.lastQty > 0 ||
+          item.currentQty > 0 ||
+          item.sellIn > 0 ||
+          item.sellOut > 0 ||
+          item.idleStock > 0,
+      );
 
     return result;
-  }, [rawWorkingData, kiosks, userData, teamAreas, teamMembers, teamUpLines, filterBelowMonth]);
+  }, [
+    rawWorkingData,
+    kiosks,
+    userData,
+    teamAreas,
+    teamMembers,
+    teamUpLines,
+    filterBelowMonth,
+  ]);
 
   // Apply other category filters (channel, material, team, area) to computed list
   const pogDataOverviewFiltered = useMemo(() => {
     let result = pogDataProcessedForOverview;
 
     // Filter 2: channel (Category)
-    if (filterBelowChannel && filterBelowChannel !== 'All') {
-      result = result.filter(item => cleanForMatch(item.category) === cleanForMatch(filterBelowChannel));
+    if (filterBelowChannel && filterBelowChannel !== "All") {
+      result = result.filter(
+        (item) =>
+          cleanForMatch(item.category) === cleanForMatch(filterBelowChannel),
+      );
     }
 
     // Filter 2: material (Hybrid)
-    if (filterBelowMaterial && filterBelowMaterial !== 'All') {
-      result = result.filter(item => cleanForMatch(item.hybrid) === cleanForMatch(filterBelowMaterial));
+    if (filterBelowMaterial && filterBelowMaterial !== "All") {
+      result = result.filter(
+        (item) =>
+          cleanForMatch(item.hybrid) === cleanForMatch(filterBelowMaterial),
+      );
     }
 
     // Filter 2: team (PIC)
-    if (filterBelowTeam && filterBelowTeam !== 'All') {
-      result = result.filter(item => cleanForMatch(item.pic) === cleanForMatch(filterBelowTeam));
+    if (filterBelowTeam && filterBelowTeam !== "All") {
+      result = result.filter(
+        (item) => cleanForMatch(item.pic) === cleanForMatch(filterBelowTeam),
+      );
     }
 
     // Filter 2: area
-    if (filterBelowArea && filterBelowArea !== 'All') {
-      result = result.filter(item => cleanForMatch(item.area) === cleanForMatch(filterBelowArea));
+    if (filterBelowArea && filterBelowArea !== "All") {
+      result = result.filter(
+        (item) => cleanForMatch(item.area) === cleanForMatch(filterBelowArea),
+      );
     }
 
     // Filter 2: crop (Crops)
-    if (filterBelowCrop && filterBelowCrop !== 'All') {
-      result = result.filter(item => checkCropMatch(item.crops, filterBelowCrop));
+    if (filterBelowCrop && filterBelowCrop !== "All") {
+      result = result.filter((item) =>
+        checkCropMatch(item.crops, filterBelowCrop),
+      );
     }
 
     return result;
-  }, [pogDataProcessedForOverview, filterBelowChannel, filterBelowMaterial, filterBelowTeam, filterBelowArea, filterBelowCrop]);
+  }, [
+    pogDataProcessedForOverview,
+    filterBelowChannel,
+    filterBelowMaterial,
+    filterBelowTeam,
+    filterBelowArea,
+    filterBelowCrop,
+  ]);
 
   const overviewHistoryData = useMemo(() => {
     // Generate historical trends grouped by Month from April 2026 to March 2027
     const monthsSequence = [
-      { key: '2026-04', label: 'Apr 26', prop: 'apr', monthIdx: 3, year: 2026 },
-      { key: '2026-05', label: 'Mei 26', prop: 'mei', monthIdx: 4, year: 2026 },
-      { key: '2026-06', label: 'Jun 26', prop: 'jun', monthIdx: 5, year: 2026 },
-      { key: '2026-07', label: 'Jul 26', prop: 'jul', monthIdx: 6, year: 2026 },
-      { key: '2026-08', label: 'Ags 26', prop: 'ags', monthIdx: 7, year: 2026 },
-      { key: '2026-09', label: 'Sep 26', prop: 'sep', monthIdx: 8, year: 2026 },
-      { key: '2026-10', label: 'Okt 26', prop: 'okt', monthIdx: 9, year: 2026 },
-      { key: '2026-11', label: 'Nov 26', prop: 'nov', monthIdx: 10, year: 2026 },
-      { key: '2026-12', label: 'Des 26', prop: 'des', monthIdx: 11, year: 2026 },
-      { key: '2027-01', label: 'Jan 27', prop: 'jan', monthIdx: 0, year: 2027 },
-      { key: '2027-02', label: 'Feb 27', prop: 'feb', monthIdx: 1, year: 2027 },
-      { key: '2027-03', label: 'Mar 27', prop: 'mar', monthIdx: 2, year: 2027 },
+      { key: "2026-04", label: "Apr 26", prop: "apr", monthIdx: 3, year: 2026 },
+      { key: "2026-05", label: "Mei 26", prop: "mei", monthIdx: 4, year: 2026 },
+      { key: "2026-06", label: "Jun 26", prop: "jun", monthIdx: 5, year: 2026 },
+      { key: "2026-07", label: "Jul 26", prop: "jul", monthIdx: 6, year: 2026 },
+      { key: "2026-08", label: "Ags 26", prop: "ags", monthIdx: 7, year: 2026 },
+      { key: "2026-09", label: "Sep 26", prop: "sep", monthIdx: 8, year: 2026 },
+      { key: "2026-10", label: "Okt 26", prop: "okt", monthIdx: 9, year: 2026 },
+      {
+        key: "2026-11",
+        label: "Nov 26",
+        prop: "nov",
+        monthIdx: 10,
+        year: 2026,
+      },
+      {
+        key: "2026-12",
+        label: "Des 26",
+        prop: "des",
+        monthIdx: 11,
+        year: 2026,
+      },
+      { key: "2027-01", label: "Jan 27", prop: "jan", monthIdx: 0, year: 2027 },
+      { key: "2027-02", label: "Feb 27", prop: "feb", monthIdx: 1, year: 2027 },
+      { key: "2027-03", label: "Mar 27", prop: "mar", monthIdx: 2, year: 2027 },
     ];
 
-    const monthlyMap: Record<string, { monthKey: string; monthLabel: string; opening: number; ending: number; stockIn: number; idle: number; pog: number }> = {};
-    monthsSequence.forEach(item => {
+    const monthlyMap: Record<
+      string,
+      {
+        monthKey: string;
+        monthLabel: string;
+        opening: number;
+        ending: number;
+        stockIn: number;
+        idle: number;
+        pog: number;
+      }
+    > = {};
+    monthsSequence.forEach((item) => {
       monthlyMap[item.key] = {
         monthKey: item.key,
         monthLabel: item.label,
@@ -2908,46 +4069,63 @@ const Dashboard = ({
         ending: 0,
         stockIn: 0,
         idle: 0,
-        pog: 0
+        pog: 0,
       };
     });
 
-    rawWorkingData.forEach(d => {
+    rawWorkingData.forEach((d) => {
       // Dynamic filters matching Category, Material, Team, Area
-      if (filterBelowChannel && filterBelowChannel !== 'All') {
+      if (filterBelowChannel && filterBelowChannel !== "All") {
         const kName = cleanForMatch(d.kiosk);
-        const kInfo = kiosks.find(k => cleanForMatch(k.name) === kName);
-        if (!kInfo || cleanForMatch(kInfo.category || d.category) !== cleanForMatch(filterBelowChannel)) {
+        const kInfo = kiosks.find((k) => cleanForMatch(k.name) === kName);
+        if (
+          !kInfo ||
+          cleanForMatch(kInfo.category || d.category) !==
+            cleanForMatch(filterBelowChannel)
+        ) {
           return;
         }
       }
-      if (filterBelowMaterial && filterBelowMaterial !== 'All') {
+      if (filterBelowMaterial && filterBelowMaterial !== "All") {
         if (cleanForMatch(d.hybrid) !== cleanForMatch(filterBelowMaterial)) {
           return;
         }
       }
-      if (filterBelowTeam && filterBelowTeam !== 'All') {
+      if (filterBelowTeam && filterBelowTeam !== "All") {
         const kName = cleanForMatch(d.kiosk);
-        const kInfo = kiosks.find(k => cleanForMatch(k.name) === kName) || {};
-        const rawPic = normalizeName(String(d.user || kInfo.pic || 'Unknown'));
-        const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+        const kInfo = kiosks.find((k) => cleanForMatch(k.name) === kName) || {};
+        const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
+        const pic = getDdaOfUser(
+          rawPic,
+          userData?.name,
+          userData?.teamProfiles,
+        );
         if (cleanForMatch(pic) !== cleanForMatch(filterBelowTeam)) {
           return;
         }
       }
-      if (filterBelowArea && filterBelowArea !== 'All') {
+      if (filterBelowArea && filterBelowArea !== "All") {
         const kName = cleanForMatch(d.kiosk);
-        const kInfo = kiosks.find(k => cleanForMatch(k.name) === kName) || {};
-        const rawPic = normalizeName(String(d.user || kInfo.pic || 'Unknown'));
-        const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-        const matchedMember = teamMembers.find(m => matchNames(m, pic));
-        const area = getFromRecord<string>(teamAreas, matchedMember || pic) || kInfo.area || d.area || '-';
+        const kInfo = kiosks.find((k) => cleanForMatch(k.name) === kName) || {};
+        const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
+        const pic = getDdaOfUser(
+          rawPic,
+          userData?.name,
+          userData?.teamProfiles,
+        );
+        const matchedMember = teamMembers.find((m) => matchNames(m, pic));
+        const area =
+          getFromRecord<string>(teamAreas, matchedMember || pic) ||
+          kInfo.area ||
+          d.area ||
+          "-";
         if (cleanForMatch(area) !== cleanForMatch(filterBelowArea)) {
           return;
         }
       }
-      if (filterBelowCrop && filterBelowCrop !== 'All') {
-        const itemCrop = d.crops || d.Crops || d.crop || d.Crop || d.CROP || d.CROPS || '';
+      if (filterBelowCrop && filterBelowCrop !== "All") {
+        const itemCrop =
+          d.crops || d.Crops || d.crop || d.Crop || d.CROP || d.CROPS || "";
         if (!checkCropMatch(itemCrop, filterBelowCrop)) {
           return;
         }
@@ -2955,7 +4133,7 @@ const Dashboard = ({
 
       // Find max POG across months to estimate capacity
       let maxPogForKiosk = 0;
-      monthsSequence.forEach(cfg => {
+      monthsSequence.forEach((cfg) => {
         const val = Number((d as any)[cfg.prop]) || 0;
         if (val > maxPogForKiosk) maxPogForKiosk = val;
       });
@@ -2964,11 +4142,14 @@ const Dashboard = ({
       // Initialize sequential inventory simulation for this specific channel partner
       let currentOpening = Math.round(maxPogForKiosk * 1.5 + 40);
 
-      monthsSequence.forEach(cfg => {
+      monthsSequence.forEach((cfg) => {
         const pogVal = Number((d as any)[cfg.prop]) || 0;
         const stockInVal = Math.round(pogVal * 1.08 + (pogVal > 0 ? 12 : 3));
         const endingVal = Math.max(0, currentOpening + stockInVal - pogVal);
-        const idleVal = Math.min(endingVal, Math.round(currentOpening * 0.15 + 8));
+        const idleVal = Math.min(
+          endingVal,
+          Math.round(currentOpening * 0.15 + 8),
+        );
 
         monthlyMap[cfg.key].opening += currentOpening;
         monthlyMap[cfg.key].ending += endingVal;
@@ -2980,31 +4161,61 @@ const Dashboard = ({
       });
     });
 
-    return monthsSequence.map(cfg => monthlyMap[cfg.key]);
-  }, [rawWorkingData, kiosks, filterBelowChannel, filterBelowMaterial, filterBelowTeam, filterBelowArea, filterBelowCrop, userData, teamMembers, teamAreas]);
+    return monthsSequence.map((cfg) => monthlyMap[cfg.key]);
+  }, [
+    rawWorkingData,
+    kiosks,
+    filterBelowChannel,
+    filterBelowMaterial,
+    filterBelowTeam,
+    filterBelowArea,
+    filterBelowCrop,
+    userData,
+    teamMembers,
+    teamAreas,
+  ]);
 
   const overviewStats = useMemo(() => {
     let activeKiosks = kiosks || [];
-    if (filterBelowChannel && filterBelowChannel !== 'All') {
-      activeKiosks = activeKiosks.filter(k => cleanForMatch(k.category) === cleanForMatch(filterBelowChannel));
+    if (filterBelowChannel && filterBelowChannel !== "All") {
+      activeKiosks = activeKiosks.filter(
+        (k) => cleanForMatch(k.category) === cleanForMatch(filterBelowChannel),
+      );
     }
-    if (filterBelowTeam && filterBelowTeam !== 'All') {
-      activeKiosks = activeKiosks.filter(k => {
-        const resolvedPic = getDdaOfUser(k.pic || '', userData?.name, userData?.teamProfiles);
+    if (filterBelowTeam && filterBelowTeam !== "All") {
+      activeKiosks = activeKiosks.filter((k) => {
+        const resolvedPic = getDdaOfUser(
+          k.pic || "",
+          userData?.name,
+          userData?.teamProfiles,
+        );
         return cleanForMatch(resolvedPic) === cleanForMatch(filterBelowTeam);
       });
     }
-    if (filterBelowArea && filterBelowArea !== 'All') {
-      activeKiosks = activeKiosks.filter(k => {
-        const resolvedPic = getDdaOfUser(k.pic || '', userData?.name, userData?.teamProfiles);
-        const matchedMember = teamMembers.find(m => matchNames(m, resolvedPic));
-        const area = getFromRecord<string>(teamAreas, matchedMember || resolvedPic) || k.area || '-';
+    if (filterBelowArea && filterBelowArea !== "All") {
+      activeKiosks = activeKiosks.filter((k) => {
+        const resolvedPic = getDdaOfUser(
+          k.pic || "",
+          userData?.name,
+          userData?.teamProfiles,
+        );
+        const matchedMember = teamMembers.find((m) =>
+          matchNames(m, resolvedPic),
+        );
+        const area =
+          getFromRecord<string>(teamAreas, matchedMember || resolvedPic) ||
+          k.area ||
+          "-";
         return cleanForMatch(area) === cleanForMatch(filterBelowArea);
       });
     }
-    if (filterBelowCrop && filterBelowCrop !== 'All') {
-      const activeKioskNames = new Set(pogDataOverviewFiltered.map(item => cleanForMatch(item.kiosk)));
-      activeKiosks = activeKiosks.filter(k => activeKioskNames.has(cleanForMatch(k.name)));
+    if (filterBelowCrop && filterBelowCrop !== "All") {
+      const activeKioskNames = new Set(
+        pogDataOverviewFiltered.map((item) => cleanForMatch(item.kiosk)),
+      );
+      activeKiosks = activeKiosks.filter((k) =>
+        activeKioskNames.has(cleanForMatch(k.name)),
+      );
     }
 
     let totalKiosks = activeKiosks.length;
@@ -3014,7 +4225,7 @@ const Dashboard = ({
     let totalCurrentStock = 0;
     let totalIdleStock = 0;
 
-    pogDataOverviewFiltered.forEach(item => {
+    pogDataOverviewFiltered.forEach((item) => {
       totalOpeningStock += Number(item.lastQty || 0);
       totalSellIn += Number(item.sellIn || 0);
       totalSellOut += Number(item.sellOut || 0);
@@ -3023,44 +4234,66 @@ const Dashboard = ({
     });
 
     // Grouping dimension: group by area, province, sales_agronomist, business_solution, material, or distributor
-    const groupMap: Record<string, { name: string; pog: number; stock: number; sellIn: number; sellOut: number; opening: number; idle: number }> = {};
-    
-    pogDataOverviewFiltered.forEach(item => {
-      let gVal = '';
+    const groupMap: Record<
+      string,
+      {
+        name: string;
+        pog: number;
+        stock: number;
+        sellIn: number;
+        sellOut: number;
+        opening: number;
+        idle: number;
+      }
+    > = {};
+
+    pogDataOverviewFiltered.forEach((item) => {
+      let gVal = "";
       const itemPic = item.pic;
-      const rawPos = getFromRecord<string>(teamPositions, itemPic) || '';
+      const rawPos = getFromRecord<string>(teamPositions, itemPic) || "";
       const pos = normalizePosition(rawPos);
-      
-      if (overviewGroupDimension === 'area') {
-        gVal = item.area || 'Tanpa Area';
-      } else if (overviewGroupDimension === 'province') {
-        gVal = getFromRecord<string>(teamProvinces, itemPic) || item.province || 'Tanpa Provinsi';
-      } else if (overviewGroupDimension === 'sales_agronomist') {
-        if (pos === 'Sales Agronomist') {
-          gVal = itemPic || 'Unknown';
+
+      if (overviewGroupDimension === "area") {
+        gVal = item.area || "Tanpa Area";
+      } else if (overviewGroupDimension === "province") {
+        gVal =
+          getFromRecord<string>(teamProvinces, itemPic) ||
+          item.province ||
+          "Tanpa Provinsi";
+      } else if (overviewGroupDimension === "sales_agronomist") {
+        if (pos === "Sales Agronomist") {
+          gVal = itemPic || "Unknown";
         } else {
           return;
         }
-      } else if (overviewGroupDimension === 'business_solution') {
-        if (pos === 'Business Solution') {
-          gVal = itemPic || 'Unknown';
+      } else if (overviewGroupDimension === "business_solution") {
+        if (pos === "Business Solution") {
+          gVal = itemPic || "Unknown";
         } else {
           return;
         }
-      } else if (overviewGroupDimension === 'material') {
-        gVal = item.hybrid || 'Lainnya';
-      } else if ((overviewGroupDimension as string) === 'distributor') {
-        if (cleanForMatch(item.category) === 'distributor') {
-          gVal = item.kiosk || 'Tanpa Distributor';
+      } else if (overviewGroupDimension === "material") {
+        gVal = item.hybrid || "Lainnya";
+      } else if ((overviewGroupDimension as string) === "distributor") {
+        if (cleanForMatch(item.category) === "distributor") {
+          gVal = item.kiosk || "Tanpa Distributor";
         } else {
           return;
         }
       } else {
-        gVal = item.area || 'Tanpa Area';
+        gVal = item.area || "Tanpa Area";
       }
 
       if (!groupMap[gVal]) {
-        groupMap[gVal] = { name: gVal, pog: 0, stock: 0, sellIn: 0, sellOut: 0, opening: 0, idle: 0 };
+        groupMap[gVal] = {
+          name: gVal,
+          pog: 0,
+          stock: 0,
+          sellIn: 0,
+          sellOut: 0,
+          opening: 0,
+          idle: 0,
+        };
       }
       groupMap[gVal].pog += Number(item.pog || 0);
       groupMap[gVal].stock += Number(item.currentQty || 0);
@@ -3069,15 +4302,15 @@ const Dashboard = ({
       groupMap[gVal].opening += Number(item.lastQty || 0);
       groupMap[gVal].idle += Number(item.idleStock || 0);
     });
-    
+
     const areaChartData = Object.values(groupMap).sort((a, b) => {
-      if (overviewMetricFilter === 'movement') {
-        return (b.sellIn + b.pog) - (a.sellIn + a.pog);
-      } else if (overviewMetricFilter === 'idle') {
+      if (overviewMetricFilter === "movement") {
+        return b.sellIn + b.pog - (a.sellIn + a.pog);
+      } else if (overviewMetricFilter === "idle") {
         return b.idle - a.idle;
-      } else if (overviewMetricFilter === 'total_stock') {
+      } else if (overviewMetricFilter === "total_stock") {
         return b.stock - a.stock;
-      } else if (overviewMetricFilter === 'Opening') {
+      } else if (overviewMetricFilter === "Opening") {
         return b.opening - a.opening;
       } else {
         return b.pog - a.pog;
@@ -3086,8 +4319,8 @@ const Dashboard = ({
 
     // Group by Category of Kiosk (Channel)
     const catMap: Record<string, { name: string; value: number }> = {};
-    activeKiosks.forEach(k => {
-      const cat = k.category || 'Uncategorized';
+    activeKiosks.forEach((k) => {
+      const cat = k.category || "Uncategorized";
       if (!catMap[cat]) {
         catMap[cat] = { name: cat, value: 0 };
       }
@@ -3096,16 +4329,21 @@ const Dashboard = ({
     const categoryChartData = Object.values(catMap);
 
     // Group by Crops
-    const cropMap: Record<string, { name: string; stock: number; pog: number }> = {};
-    pogDataOverviewFiltered.forEach(item => {
-      const crop = item.crops || 'Lainnya';
+    const cropMap: Record<
+      string,
+      { name: string; stock: number; pog: number }
+    > = {};
+    pogDataOverviewFiltered.forEach((item) => {
+      const crop = item.crops || "Lainnya";
       if (!cropMap[crop]) {
         cropMap[crop] = { name: crop, stock: 0, pog: 0 };
       }
       cropMap[crop].stock += Number(item.currentQty || 0);
       cropMap[crop].pog += Number(item.pog || 0);
     });
-    const cropsChartData = Object.values(cropMap).sort((a, b) => b.stock - a.stock);
+    const cropsChartData = Object.values(cropMap).sort(
+      (a, b) => b.stock - a.stock,
+    );
 
     return {
       totalKiosks,
@@ -3116,23 +4354,47 @@ const Dashboard = ({
       totalIdleStock,
       areaChartData,
       categoryChartData,
-      cropsChartData
+      cropsChartData,
     };
-  }, [kiosks, pogDataOverviewFiltered, overviewMetricFilter, overviewGroupDimension, teamPositions, teamProvinces, filterBelowChannel, filterBelowTeam, filterBelowArea, filterBelowCrop, userData, teamMembers, teamAreas]);
+  }, [
+    kiosks,
+    pogDataOverviewFiltered,
+    overviewMetricFilter,
+    overviewGroupDimension,
+    teamPositions,
+    teamProvinces,
+    filterBelowChannel,
+    filterBelowTeam,
+    filterBelowArea,
+    filterBelowCrop,
+    userData,
+    teamMembers,
+    teamAreas,
+  ]);
 
   const topKiosksData = useMemo(() => {
-    const kioskSales: Record<string, { kiosk: string; category: string; pic: string; area: string; pog: number; currentStock: number }> = {};
-    
-    pogDataOverviewFiltered.forEach(item => {
+    const kioskSales: Record<
+      string,
+      {
+        kiosk: string;
+        category: string;
+        pic: string;
+        area: string;
+        pog: number;
+        currentStock: number;
+      }
+    > = {};
+
+    pogDataOverviewFiltered.forEach((item) => {
       const kName = item.kiosk;
       if (!kioskSales[kName]) {
         kioskSales[kName] = {
           kiosk: kName,
-          category: item.category || 'Uncategorized',
-          pic: item.pic || 'Unknown',
-          area: item.area || '-',
+          category: item.category || "Uncategorized",
+          pic: item.pic || "Unknown",
+          area: item.area || "-",
           pog: 0,
-          currentStock: 0
+          currentStock: 0,
         };
       }
       kioskSales[kName].pog += Number(item.pog || 0);
@@ -3145,45 +4407,58 @@ const Dashboard = ({
   }, [pogDataOverviewFiltered]);
 
   const employeePerformanceData = useMemo(() => {
-    const empSales: Record<string, { employee: string; area: string; pog: number; currentStock: number }> = {};
-    
-    teamMembers.forEach(member => {
+    const empSales: Record<
+      string,
+      { employee: string; area: string; pog: number; currentStock: number }
+    > = {};
+
+    teamMembers.forEach((member) => {
       const mClean = cleanForMatch(member);
-      
+
       // Get area for this member
-      let area = '-';
+      let area = "-";
       const foundArea = getFromRecord<string>(teamAreas, member);
       if (foundArea) {
         area = foundArea;
       } else if (mClean === cleanForMatch(userData?.name)) {
-        area = userData?.area || '-';
+        area = userData?.area || "-";
       }
 
       // Filter by Area if chosen
-      if (filterBelowArea && filterBelowArea !== 'All' && cleanForMatch(area) !== cleanForMatch(filterBelowArea)) {
+      if (
+        filterBelowArea &&
+        filterBelowArea !== "All" &&
+        cleanForMatch(area) !== cleanForMatch(filterBelowArea)
+      ) {
         return;
       }
 
       // Filter by PIC if chosen
-      if (filterBelowTeam && filterBelowTeam !== 'All' && mClean !== cleanForMatch(filterBelowTeam)) {
+      if (
+        filterBelowTeam &&
+        filterBelowTeam !== "All" &&
+        mClean !== cleanForMatch(filterBelowTeam)
+      ) {
         return;
       }
-      
+
       empSales[mClean] = {
         employee: member,
         area: area,
         pog: 0,
-        currentStock: 0
+        currentStock: 0,
       };
     });
 
     // Accumulate sales and stock from pogDataOverviewFiltered
-    pogDataOverviewFiltered.forEach(item => {
+    pogDataOverviewFiltered.forEach((item) => {
       const picClean = cleanForMatch(item.pic);
       // Try to find matching employee
       let matchedEmpClean = picClean;
       if (!empSales[picClean]) {
-        const found = teamMembers.find(m => cleanForMatch(m) === picClean || matchNames(m, item.pic));
+        const found = teamMembers.find(
+          (m) => cleanForMatch(m) === picClean || matchNames(m, item.pic),
+        );
         if (found) {
           matchedEmpClean = cleanForMatch(found);
         }
@@ -3198,1108 +4473,1589 @@ const Dashboard = ({
     const empSalesList = Object.values(empSales);
 
     // Sort for Highest (Top 5)
-    const highest = [...empSalesList]
-      .sort((a, b) => b.pog - a.pog)
-      .slice(0, 5);
+    const highest = [...empSalesList].sort((a, b) => b.pog - a.pog).slice(0, 5);
 
     // Sort for Lowest (Bottom 5)
-    const lowest = [...empSalesList]
-      .sort((a, b) => a.pog - b.pog)
-      .slice(0, 5);
+    const lowest = [...empSalesList].sort((a, b) => a.pog - b.pog).slice(0, 5);
 
     return { highest, lowest };
-  }, [teamMembers, pogDataOverviewFiltered, teamAreas, userData, filterBelowArea, filterBelowTeam]);
+  }, [
+    teamMembers,
+    pogDataOverviewFiltered,
+    teamAreas,
+    userData,
+    filterBelowArea,
+    filterBelowTeam,
+  ]);
 
   // Filter active POG team members based on selected crop filter
   const activePogMembers = useMemo(() => {
-      if (!pogFilterCrop || pogFilterCrop === 'All') return teamMembers;
+    if (!pogFilterCrop || pogFilterCrop === "All") return teamMembers;
 
-      const kiosksMapByCleanName: Record<string, any> = {};
-      kiosks.forEach(k => {
-          kiosksMapByCleanName[cleanForMatch(k.name)] = k;
-      });
-      const teamMembersMapByCleanName: Record<string, string> = {};
-      teamMembers.forEach(m => {
-          teamMembersMapByCleanName[cleanForMatch(m)] = m;
-      });
-      const getTeamMemberMatch = (name: string): string | undefined => {
-          const clean = cleanForMatch(name);
-          if (teamMembersMapByCleanName[clean]) return teamMembersMapByCleanName[clean];
-          return teamMembers.find(m => matchNames(m, name));
-      };
+    const kiosksMapByCleanName: Record<string, any> = {};
+    kiosks.forEach((k) => {
+      kiosksMapByCleanName[cleanForMatch(k.name)] = k;
+    });
+    const teamMembersMapByCleanName: Record<string, string> = {};
+    teamMembers.forEach((m) => {
+      teamMembersMapByCleanName[cleanForMatch(m)] = m;
+    });
+    const getTeamMemberMatch = (name: string): string | undefined => {
+      const clean = cleanForMatch(name);
+      if (teamMembersMapByCleanName[clean])
+        return teamMembersMapByCleanName[clean];
+      return teamMembers.find((m) => matchNames(m, name));
+    };
 
-      const matchedMembersWithCrop = new Set<string>();
-      pogDataProcessed.forEach(item => {
-          const itemCrop = String(item.crops || '').trim().toLowerCase();
-          if (checkCropMatch(itemCrop, pogFilterCrop)) {
-              const matchedMember = getTeamMemberMatch(item.pic);
-              if (matchedMember) {
-                  matchedMembersWithCrop.add(cleanForMatch(matchedMember));
-              }
+    const matchedMembersWithCrop = new Set<string>();
+    pogDataProcessed.forEach((item) => {
+      const itemCrop = String(item.crops || "")
+        .trim()
+        .toLowerCase();
+      if (checkCropMatch(itemCrop, pogFilterCrop)) {
+        const matchedMember = getTeamMemberMatch(item.pic);
+        if (matchedMember) {
+          matchedMembersWithCrop.add(cleanForMatch(matchedMember));
+        }
+      }
+    });
+
+    const activeSet = new Set<string>();
+    activeSet.add(cleanForMatch(userData?.name));
+
+    teamMembers.forEach((m) => {
+      const mClean = cleanForMatch(m);
+      if (matchedMembersWithCrop.has(mClean)) {
+        activeSet.add(mClean);
+        let current = m;
+        for (let i = 0; i < 15; i++) {
+          const upRaw = getFromRecord<string>(teamUpLines, current);
+          if (!upRaw) break;
+
+          const up = getTeamMemberMatch(upRaw as string) || (upRaw as string);
+
+          const upClean = cleanForMatch(up);
+          if (activeSet.has(upClean)) {
+            break;
           }
-      });
+          activeSet.add(upClean);
+          current = up;
+        }
+      }
+    });
 
-      const activeSet = new Set<string>();
-      activeSet.add(cleanForMatch(userData?.name));
-
-      teamMembers.forEach(m => {
-          const mClean = cleanForMatch(m);
-          if (matchedMembersWithCrop.has(mClean)) {
-              activeSet.add(mClean);
-              let current = m;
-              for (let i = 0; i < 15; i++) {
-                  const upRaw = getFromRecord<string>(teamUpLines, current);
-                  if (!upRaw) break;
-                  
-                  const up = getTeamMemberMatch(upRaw as string) || upRaw as string;
-                  
-                  const upClean = cleanForMatch(up);
-                  if (activeSet.has(upClean)) {
-                      break;
-                  }
-                  activeSet.add(upClean);
-                  current = up;
-              }
-          }
-      });
-
-      return teamMembers.filter(m => activeSet.has(cleanForMatch(m)));
-  }, [teamMembers, pogFilterCrop, pogDataProcessed, kiosks, userData, teamUpLines]);
+    return teamMembers.filter((m) => activeSet.has(cleanForMatch(m)));
+  }, [
+    teamMembers,
+    pogFilterCrop,
+    pogDataProcessed,
+    kiosks,
+    userData,
+    teamUpLines,
+  ]);
 
   const aggregatedPogData = useMemo(() => {
-      const teamMembersCleanSet = new Set(activePogMembers.map(m => cleanForMatch(m)).filter(Boolean));
-      const nonLeafTeamMembersClean = activePogMembers.map(m => cleanForMatch(m)).filter(Boolean);
+    const teamMembersCleanSet = new Set(
+      activePogMembers.map((m) => cleanForMatch(m)).filter(Boolean),
+    );
+    const nonLeafTeamMembersClean = activePogMembers
+      .map((m) => cleanForMatch(m))
+      .filter(Boolean);
 
-      const filteredData = pogDataProcessed.filter(item => {
-          const picClean = cleanForMatch(item.pic);
-          const isTeamMember = teamMembersCleanSet.has(picClean) || nonLeafTeamMembersClean.some(m => picClean.includes(m));
-          const isCropMatch = checkCropMatch(item.crops, pogFilterCrop);
-          return isTeamMember && isCropMatch;
+    const filteredData = pogDataProcessed.filter((item) => {
+      const picClean = cleanForMatch(item.pic);
+      const isTeamMember =
+        teamMembersCleanSet.has(picClean) ||
+        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+      const isCropMatch = checkCropMatch(item.crops, pogFilterCrop);
+      return isTeamMember && isCropMatch;
+    });
+
+    // Filter active POG team members based on selected crop filter
+    const hasGroupInfo = employees.some((e) => {
+      const g = String(
+        e.group || e.Group || e["group"] || e["Group"] || "",
+      ).trim();
+      return g.length > 0;
+    });
+
+    if (pogGroupBy === "subordinate") {
+      // Pre-compute uplines for activePogMembers to avoid O(M) recursive scans inside buildNode loops
+      const pMembersUplines: Record<string, string | null> = {};
+      const pDirectSubsMap: Record<string, string[]> = {};
+      activePogMembers.forEach((m) => {
+        pMembersUplines[m] = getUplineInTeam(m, activePogMembers, teamUpLines);
       });
 
-      // Filter active POG team members based on selected crop filter
-      const hasGroupInfo = employees.some(e => {
-          const g = String(e.group || e.Group || e['group'] || e['Group'] || '').trim();
-          return g.length > 0;
+      const rootMembers = activePogMembers.filter((m) => {
+        return pMembersUplines[m] === null;
+      });
+      rootMembers.sort((a, b) =>
+        compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+      );
+
+      activePogMembers.forEach((m) => {
+        const upl = pMembersUplines[m];
+        if (upl !== null) {
+          const uplClean = cleanForMatch(upl);
+          if (!pDirectSubsMap[uplClean]) {
+            pDirectSubsMap[uplClean] = [];
+          }
+          pDirectSubsMap[uplClean].push(m);
+        }
       });
 
-      if (pogGroupBy === 'subordinate') {
-          // Pre-compute uplines for activePogMembers to avoid O(M) recursive scans inside buildNode loops
-          const pMembersUplines: Record<string, string | null> = {};
-          const pDirectSubsMap: Record<string, string[]> = {};
-          activePogMembers.forEach(m => {
-              pMembersUplines[m] = getUplineInTeam(m, activePogMembers, teamUpLines);
-          });
+      Object.keys(pDirectSubsMap).forEach((key) => {
+        pDirectSubsMap[key].sort((a, b) =>
+          compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+        );
+      });
 
-          const rootMembers = activePogMembers.filter(m => {
-              return pMembersUplines[m] === null;
-          });
-          rootMembers.sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
+      const buildNode = (name: string): any => {
+        const nameClean = cleanForMatch(name);
+        const directSubs = pDirectSubsMap[nameClean] || [];
+        const myItems = filteredData.filter(
+          (item) => cleanForMatch(item.pic) === nameClean,
+        );
+        const childrenNodes = directSubs.map((sub) => buildNode(sub));
 
-          activePogMembers.forEach(m => {
-              const upl = pMembersUplines[m];
-              if (upl !== null) {
-                  const uplClean = cleanForMatch(upl);
-                  if (!pDirectSubsMap[uplClean]) {
-                      pDirectSubsMap[uplClean] = [];
-                  }
-                  pDirectSubsMap[uplClean].push(m);
-              }
-          });
+        const ownPog = {
+          lastQty: 0,
+          currentQty: 0,
+          pog: 0,
+          sellIn: 0,
+          sellOut: 0,
+          totalInv: 0,
+          idleStock: 0,
+        };
+        myItems.forEach((item) => {
+          ownPog.lastQty += Number(item.lastQty) || 0;
+          ownPog.currentQty += Number(item.currentQty) || 0;
+          ownPog.sellIn += Number(item.sellIn) || 0;
+          ownPog.sellOut += Number(item.sellOut) || 0;
+          ownPog.totalInv += Number(item.totalInv) || 0;
+          ownPog.pog += Number(item.pog) || 0;
+          ownPog.idleStock += Number(item.idleStock) || 0;
+        });
 
-          Object.keys(pDirectSubsMap).forEach(key => {
-              pDirectSubsMap[key].sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
-          });
+        const transPog = { ...ownPog };
+        childrenNodes.forEach((child) => {
+          transPog.lastQty += child.lastQty || 0;
+          transPog.currentQty += child.currentQty || 0;
+          transPog.sellIn += child.sellIn || 0;
+          transPog.sellOut += child.sellOut || 0;
+          transPog.totalInv += child.totalInv || 0;
+          transPog.pog += child.pog || 0;
+          transPog.idleStock += child.idleStock || 0;
+        });
 
-          const buildNode = (name: string): any => {
-              const nameClean = cleanForMatch(name);
-              const directSubs = pDirectSubsMap[nameClean] || [];
-              const myItems = filteredData.filter(item => cleanForMatch(item.pic) === nameClean);
-              const childrenNodes = directSubs.map(sub => buildNode(sub));
+        let finalChildren = [];
 
-              const ownPog = { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-              myItems.forEach(item => {
-                  ownPog.lastQty += Number(item.lastQty) || 0;
-                  ownPog.currentQty += Number(item.currentQty) || 0;
-                  ownPog.sellIn += Number(item.sellIn) || 0;
-                  ownPog.sellOut += Number(item.sellOut) || 0;
-                  ownPog.totalInv += Number(item.totalInv) || 0;
-                  ownPog.pog += Number(item.pog) || 0;
-                  ownPog.idleStock += Number(item.idleStock) || 0;
-              });
+        if (pogSubGroupBy === "subordinate") {
+          finalChildren = [...childrenNodes];
+        } else {
+          const leafGroups: Record<string, any> = {};
 
-              const transPog = { ...ownPog };
-              childrenNodes.forEach(child => {
-                  transPog.lastQty += child.lastQty || 0;
-                  transPog.currentQty += child.currentQty || 0;
-                  transPog.sellIn += child.sellIn || 0;
-                  transPog.sellOut += child.sellOut || 0;
-                  transPog.totalInv += child.totalInv || 0;
-                  transPog.pog += child.pog || 0;
-                  transPog.idleStock += child.idleStock || 0;
-              });
+          // Accumulate own items
+          myItems.forEach((item) => {
+            let leafKey = "Unknown";
+            if (pogSubGroupBy === "channel" || pogSubGroupBy === "kiosk")
+              leafKey = item.kiosk || "Unknown Channel";
+            else if (pogSubGroupBy === "hybrid")
+              leafKey = item.hybrid || "Unknown";
+            else if (pogSubGroupBy === "area") leafKey = item.area || "Unknown";
+            else if (pogSubGroupBy === "category")
+              leafKey = item.category || "Unknown";
+            else if (pogSubGroupBy === "crops")
+              leafKey = item.crops || "Unknown";
 
-              let finalChildren = [];
-
-              if (pogSubGroupBy === 'subordinate') {
-                  finalChildren = [...childrenNodes];
-              } else {
-                  const leafGroups: Record<string, any> = {};
-                  
-                  // Accumulate own items
-                  myItems.forEach(item => {
-                      let leafKey = 'Unknown';
-                      if (pogSubGroupBy === 'channel' || pogSubGroupBy === 'kiosk') leafKey = item.kiosk || 'Unknown Channel';
-                      else if (pogSubGroupBy === 'hybrid') leafKey = item.hybrid || 'Unknown';
-                      else if (pogSubGroupBy === 'area') leafKey = item.area || 'Unknown';
-                      else if (pogSubGroupBy === 'category') leafKey = item.category || 'Unknown';
-                      else if (pogSubGroupBy === 'crops') leafKey = item.crops || 'Unknown';
-
-                      if (!leafGroups[leafKey]) {
-                          leafGroups[leafKey] = { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0, category: item.category };
-                      }
-                      leafGroups[leafKey].lastQty += Number(item.lastQty) || 0;
-                      leafGroups[leafKey].currentQty += Number(item.currentQty) || 0;
-                      leafGroups[leafKey].sellIn += Number(item.sellIn) || 0;
-                      leafGroups[leafKey].sellOut += Number(item.sellOut) || 0;
-                      leafGroups[leafKey].totalInv += Number(item.totalInv) || 0;
-                      leafGroups[leafKey].pog += Number(item.pog) || 0;
-                      leafGroups[leafKey].idleStock += Number(item.idleStock) || 0;
-                  });
-
-                  // Roll up children's leaves
-                  childrenNodes.forEach(child => {
-                      (child.children || []).forEach((cNode: any) => {
-                          const leafKey = cNode.name;
-                          if (!leafGroups[leafKey]) {
-                              leafGroups[leafKey] = { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0, category: cNode.category };
-                          }
-                          leafGroups[leafKey].lastQty += Number(cNode.lastQty) || 0;
-                          leafGroups[leafKey].currentQty += Number(cNode.currentQty) || 0;
-                          leafGroups[leafKey].sellIn += Number(cNode.sellIn) || 0;
-                          leafGroups[leafKey].sellOut += Number(cNode.sellOut) || 0;
-                          leafGroups[leafKey].totalInv += Number(cNode.totalInv) || 0;
-                          leafGroups[leafKey].pog += Number(cNode.pog) || 0;
-                          leafGroups[leafKey].idleStock += Number(cNode.idleStock) || 0;
-                      });
-                  });
-
-                  let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
-                      name: leafName,
-                      isLeaf: true,
-                      ...(val as any)
-                  }));
-
-                  if (pogSubGroupBy === 'channel' || pogSubGroupBy === 'kiosk') {
-                      const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                      leaves.sort((a, b) => {
-                          const wA = catOrder[a.category] || 99;
-                          const wB = catOrder[b.category] || 99;
-                          if (wA !== wB) return wA - wB;
-                          return b.pog - a.pog;
-                      });
-                  } else {
-                      leaves.sort((a, b) => b.pog - a.pog);
-                  }
-
-                  finalChildren = leaves;
-              }
-
-              return {
-                  name,
-                  level: getMemberLevel(name, teamLevels, teamPositions, userData),
-                  children: finalChildren,
-                  isExpandable: finalChildren.length > 0,
-                  teamChildren: childrenNodes,
-                  ...transPog
+            if (!leafGroups[leafKey]) {
+              leafGroups[leafKey] = {
+                lastQty: 0,
+                currentQty: 0,
+                pog: 0,
+                sellIn: 0,
+                sellOut: 0,
+                totalInv: 0,
+                idleStock: 0,
+                category: item.category,
               };
+            }
+            leafGroups[leafKey].lastQty += Number(item.lastQty) || 0;
+            leafGroups[leafKey].currentQty += Number(item.currentQty) || 0;
+            leafGroups[leafKey].sellIn += Number(item.sellIn) || 0;
+            leafGroups[leafKey].sellOut += Number(item.sellOut) || 0;
+            leafGroups[leafKey].totalInv += Number(item.totalInv) || 0;
+            leafGroups[leafKey].pog += Number(item.pog) || 0;
+            leafGroups[leafKey].idleStock += Number(item.idleStock) || 0;
+          });
+
+          // Roll up children's leaves
+          childrenNodes.forEach((child) => {
+            (child.children || []).forEach((cNode: any) => {
+              const leafKey = cNode.name;
+              if (!leafGroups[leafKey]) {
+                leafGroups[leafKey] = {
+                  lastQty: 0,
+                  currentQty: 0,
+                  pog: 0,
+                  sellIn: 0,
+                  sellOut: 0,
+                  totalInv: 0,
+                  idleStock: 0,
+                  category: cNode.category,
+                };
+              }
+              leafGroups[leafKey].lastQty += Number(cNode.lastQty) || 0;
+              leafGroups[leafKey].currentQty += Number(cNode.currentQty) || 0;
+              leafGroups[leafKey].sellIn += Number(cNode.sellIn) || 0;
+              leafGroups[leafKey].sellOut += Number(cNode.sellOut) || 0;
+              leafGroups[leafKey].totalInv += Number(cNode.totalInv) || 0;
+              leafGroups[leafKey].pog += Number(cNode.pog) || 0;
+              leafGroups[leafKey].idleStock += Number(cNode.idleStock) || 0;
+            });
+          });
+
+          let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
+            name: leafName,
+            isLeaf: true,
+            ...(val as any),
+          }));
+
+          if (pogSubGroupBy === "channel" || pogSubGroupBy === "kiosk") {
+            const catOrder: Record<string, number> = {
+              Distributor: 1,
+              R1: 2,
+              R2: 3,
+            };
+            leaves.sort((a, b) => {
+              const wA = catOrder[a.category] || 99;
+              const wB = catOrder[b.category] || 99;
+              if (wA !== wB) return wA - wB;
+              return b.pog - a.pog;
+            });
+          } else {
+            leaves.sort((a, b) => b.pog - a.pog);
+          }
+
+          finalChildren = leaves;
+        }
+
+        return {
+          name,
+          level: getMemberLevel(name, teamLevels, teamPositions, userData),
+          children: finalChildren,
+          isExpandable: finalChildren.length > 0,
+          teamChildren: childrenNodes,
+          ...transPog,
+        };
+      };
+
+      const roots = rootMembers.map((root) => buildNode(root));
+      roots.sort((a, b) => b.pog - a.pog);
+      return roots.flatMap((node) => {
+        if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
+          if (userLevel <= 3) {
+            const nameClean = cleanForMatch(node.name);
+            const myItems = filteredData.filter(
+              (item) => cleanForMatch(item.pic) === nameClean,
+            );
+
+            const ownPog = {
+              lastQty: 0,
+              currentQty: 0,
+              pog: 0,
+              sellIn: 0,
+              sellOut: 0,
+              totalInv: 0,
+              idleStock: 0,
+            };
+            myItems.forEach((item) => {
+              ownPog.lastQty += Number(item.lastQty) || 0;
+              ownPog.currentQty += Number(item.currentQty) || 0;
+              ownPog.sellIn += Number(item.sellIn) || 0;
+              ownPog.sellOut += Number(item.sellOut) || 0;
+              ownPog.totalInv += Number(item.totalInv) || 0;
+              ownPog.pog += Number(item.pog) || 0;
+              ownPog.idleStock += Number(item.idleStock) || 0;
+            });
+
+            let finalChildrenOfSelf = [];
+            if (pogSubGroupBy !== "subordinate") {
+              const leafGroups: Record<string, any> = {};
+              myItems.forEach((item) => {
+                let leafKey = "Unknown";
+                if (pogSubGroupBy === "channel" || pogSubGroupBy === "kiosk")
+                  leafKey = item.kiosk || "Unknown Channel";
+                else if (pogSubGroupBy === "hybrid")
+                  leafKey = item.hybrid || "Unknown";
+                else if (pogSubGroupBy === "area")
+                  leafKey = item.area || "Unknown";
+                else if (pogSubGroupBy === "category")
+                  leafKey = item.category || "Unknown";
+                else if (pogSubGroupBy === "crops")
+                  leafKey = item.crops || "Unknown";
+
+                if (!leafGroups[leafKey]) {
+                  leafGroups[leafKey] = {
+                    lastQty: 0,
+                    currentQty: 0,
+                    pog: 0,
+                    sellIn: 0,
+                    sellOut: 0,
+                    totalInv: 0,
+                    idleStock: 0,
+                    category: item.category,
+                  };
+                }
+                leafGroups[leafKey].lastQty += Number(item.lastQty) || 0;
+                leafGroups[leafKey].currentQty += Number(item.currentQty) || 0;
+                leafGroups[leafKey].sellIn += Number(item.sellIn) || 0;
+                leafGroups[leafKey].sellOut += Number(item.sellOut) || 0;
+                leafGroups[leafKey].totalInv += Number(item.totalInv) || 0;
+                leafGroups[leafKey].pog += Number(item.pog) || 0;
+                leafGroups[leafKey].idleStock += Number(item.idleStock) || 0;
+              });
+
+              let leaves = Object.entries(leafGroups).map(
+                ([leafName, val]) => ({
+                  name: leafName,
+                  isLeaf: true,
+                  ...(val as any),
+                }),
+              );
+
+              if (pogSubGroupBy === "channel" || pogSubGroupBy === "kiosk") {
+                const catOrder: Record<string, number> = {
+                  Distributor: 1,
+                  R1: 2,
+                  R2: 3,
+                };
+                leaves.sort((a, b) => {
+                  const wA = catOrder[a.category] || 99;
+                  const wB = catOrder[b.category] || 99;
+                  if (wA !== wB) return wA - wB;
+                  return b.pog - a.pog;
+                });
+              } else {
+                leaves.sort((a, b) => b.pog - a.pog);
+              }
+              finalChildrenOfSelf = leaves;
+            }
+
+            const selfNode = {
+              name: node.name,
+              level: node.level,
+              children: finalChildrenOfSelf,
+              isExpandable: finalChildrenOfSelf.length > 0,
+              teamChildren: [],
+              ...ownPog,
+            };
+
+            return [selfNode, ...(node.teamChildren || [])];
+          } else {
+            return node.teamChildren || [];
+          }
+        }
+        return [node];
+      });
+    }
+
+    const groups: Record<string, any> = {};
+    filteredData.forEach((item) => {
+      let key = item.hybrid || "Unknown";
+      if (pogGroupBy === "area") key = item.area || "Unknown";
+      else if (pogGroupBy === "category") key = item.category || "Unknown";
+      else if (pogGroupBy === "crops") key = item.crops || "Unknown";
+
+      if (!groups[key]) {
+        groups[key] = {
+          name: key,
+          lastQty: 0,
+          currentQty: 0,
+          pog: 0,
+          sellIn: 0,
+          sellOut: 0,
+          totalInv: 0,
+          idleStock: 0,
+          childrenMap: {},
+        };
+        if (pogSubGroupBy === "subordinate") {
+          activePogMembers.forEach((m) => {
+            groups[key].childrenMap[m] = {
+              name: m,
+              lastQty: 0,
+              currentQty: 0,
+              pog: 0,
+              sellIn: 0,
+              sellOut: 0,
+              totalInv: 0,
+              idleStock: 0,
+            };
+          });
+        }
+      }
+      groups[key].lastQty += item.lastQty;
+      groups[key].currentQty += item.currentQty;
+      groups[key].sellIn += item.sellIn || 0;
+      groups[key].sellOut += item.sellOut || 0;
+      groups[key].totalInv += item.totalInv || 0;
+      groups[key].pog += item.pog;
+      groups[key].idleStock += item.idleStock || 0;
+
+      // Drill down
+      let subKey = "Unknown";
+      if (pogSubGroupBy === "channel") subKey = item.kiosk || "Unknown Channel";
+      else if (pogSubGroupBy === "hybrid") subKey = item.hybrid || "Unknown";
+      else if (pogSubGroupBy === "subordinate") {
+        const matched = activePogMembers.find(
+          (m) => cleanForMatch(m) === cleanForMatch(item.pic),
+        );
+        subKey = matched || item.pic || "Unknown";
+      } else if (pogSubGroupBy === "area") subKey = item.area || "Unknown";
+      else if (pogSubGroupBy === "category")
+        subKey = item.category || "Unknown";
+      else if (pogSubGroupBy === "crops") subKey = item.crops || "Unknown";
+
+      if (!groups[key].childrenMap[subKey]) {
+        groups[key].childrenMap[subKey] = {
+          name: subKey,
+          lastQty: 0,
+          currentQty: 0,
+          pog: 0,
+          sellIn: 0,
+          sellOut: 0,
+          totalInv: 0,
+          idleStock: 0,
+        };
+        if (pogSubGroupBy === "channel") {
+          groups[key].childrenMap[subKey].category = item.category;
+        }
+      }
+      groups[key].childrenMap[subKey].lastQty += item.lastQty;
+      groups[key].childrenMap[subKey].currentQty += item.currentQty;
+      groups[key].childrenMap[subKey].sellIn += item.sellIn || 0;
+      groups[key].childrenMap[subKey].sellOut += item.sellOut || 0;
+      groups[key].childrenMap[subKey].totalInv += item.totalInv || 0;
+      groups[key].childrenMap[subKey].pog += item.pog;
+      groups[key].childrenMap[subKey].idleStock += item.idleStock || 0;
+    });
+
+    const subMembersUplines: Record<string, string | null> = {};
+    const subDirectSubsMap: Record<string, string[]> = {};
+    let subRootMembers: string[] = [];
+    if (pogSubGroupBy === "subordinate") {
+      activePogMembers.forEach((m) => {
+        subMembersUplines[m] = getUplineInTeam(
+          m,
+          activePogMembers,
+          teamUpLines,
+        );
+      });
+      subRootMembers = activePogMembers.filter(
+        (m) => subMembersUplines[m] === null,
+      );
+      subRootMembers.sort((a, b) =>
+        compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+      );
+
+      activePogMembers.forEach((m) => {
+        const upl = subMembersUplines[m];
+        if (upl !== null) {
+          const uplClean = cleanForMatch(upl);
+          if (!subDirectSubsMap[uplClean]) {
+            subDirectSubsMap[uplClean] = [];
+          }
+          subDirectSubsMap[uplClean].push(m);
+        }
+      });
+
+      Object.keys(subDirectSubsMap).forEach((key) => {
+        subDirectSubsMap[key].sort((a, b) =>
+          compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+        );
+      });
+    }
+
+    return Object.values(groups)
+      .map((g: any) => {
+        let children = [];
+
+        if (pogSubGroupBy === "subordinate") {
+          const buildTeamPogNode = (mName: string): any => {
+            const mNameClean = cleanForMatch(mName);
+            const directSubs = subDirectSubsMap[mNameClean] || [];
+
+            const directKData = g.childrenMap[mName] || {
+              name: mName,
+              lastQty: 0,
+              currentQty: 0,
+              pog: 0,
+              sellIn: 0,
+              sellOut: 0,
+              totalInv: 0,
+              idleStock: 0,
+            };
+            const childrenNodes = directSubs
+              .map((sub) => buildTeamPogNode(sub))
+              .filter(Boolean);
+
+            const transData = { ...directKData };
+            childrenNodes.forEach((child) => {
+              transData.lastQty += child.lastQty || 0;
+              transData.currentQty += child.currentQty || 0;
+              transData.sellIn += child.sellIn || 0;
+              transData.sellOut += child.sellOut || 0;
+              transData.totalInv += child.totalInv || 0;
+              transData.pog += child.pog || 0;
+              transData.idleStock += child.idleStock || 0;
+            });
+
+            const hasSelfActivity =
+              directKData.lastQty > 0 ||
+              directKData.currentQty > 0 ||
+              directKData.sellIn > 0 ||
+              directKData.sellOut > 0 ||
+              directKData.totalInv > 0 ||
+              directKData.pog !== 0;
+            const hasChildrenActivity = childrenNodes.length > 0;
+
+            if (
+              pogGroupBy !== "subordinate" &&
+              !hasSelfActivity &&
+              !hasChildrenActivity
+            ) {
+              return null;
+            }
+
+            return {
+              name: mName,
+              level: getMemberLevel(mName, teamLevels, teamPositions, userData),
+              children: childrenNodes,
+              isExpandable: childrenNodes.length > 0,
+              teamChildren: childrenNodes,
+              ...transData,
+            };
           };
 
-          const roots = rootMembers.map(root => buildNode(root));
-          roots.sort((a, b) => b.pog - a.pog);
-          return roots.flatMap(node => {
+          children = subRootMembers
+            .map((m) => buildTeamPogNode(m))
+            .filter(Boolean)
+            .flatMap((node) => {
               if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
-                  if (userLevel <= 3) {
-                      const nameClean = cleanForMatch(node.name);
-                      const myItems = filteredData.filter(item => cleanForMatch(item.pic) === nameClean);
-
-                      const ownPog = { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-                      myItems.forEach(item => {
-                          ownPog.lastQty += Number(item.lastQty) || 0;
-                          ownPog.currentQty += Number(item.currentQty) || 0;
-                          ownPog.sellIn += Number(item.sellIn) || 0;
-                          ownPog.sellOut += Number(item.sellOut) || 0;
-                          ownPog.totalInv += Number(item.totalInv) || 0;
-                          ownPog.pog += Number(item.pog) || 0;
-                          ownPog.idleStock += Number(item.idleStock) || 0;
-                      });
-
-                      let finalChildrenOfSelf = [];
-                      if (pogSubGroupBy !== 'subordinate') {
-                          const leafGroups: Record<string, any> = {};
-                          myItems.forEach(item => {
-                              let leafKey = 'Unknown';
-                              if (pogSubGroupBy === 'channel' || pogSubGroupBy === 'kiosk') leafKey = item.kiosk || 'Unknown Channel';
-                              else if (pogSubGroupBy === 'hybrid') leafKey = item.hybrid || 'Unknown';
-                              else if (pogSubGroupBy === 'area') leafKey = item.area || 'Unknown';
-                              else if (pogSubGroupBy === 'category') leafKey = item.category || 'Unknown';
-                              else if (pogSubGroupBy === 'crops') leafKey = item.crops || 'Unknown';
-
-                              if (!leafGroups[leafKey]) {
-                                  leafGroups[leafKey] = { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0, category: item.category };
-                              }
-                              leafGroups[leafKey].lastQty += Number(item.lastQty) || 0;
-                              leafGroups[leafKey].currentQty += Number(item.currentQty) || 0;
-                              leafGroups[leafKey].sellIn += Number(item.sellIn) || 0;
-                              leafGroups[leafKey].sellOut += Number(item.sellOut) || 0;
-                              leafGroups[leafKey].totalInv += Number(item.totalInv) || 0;
-                              leafGroups[leafKey].pog += Number(item.pog) || 0;
-                              leafGroups[leafKey].idleStock += Number(item.idleStock) || 0;
-                          });
-
-                          let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
-                              name: leafName,
-                              isLeaf: true,
-                              ...(val as any)
-                          }));
-
-                          if (pogSubGroupBy === 'channel' || pogSubGroupBy === 'kiosk') {
-                              const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                              leaves.sort((a, b) => {
-                                  const wA = catOrder[a.category] || 99;
-                                  const wB = catOrder[b.category] || 99;
-                                  if (wA !== wB) return wA - wB;
-                                  return b.pog - a.pog;
-                              });
-                          } else {
-                              leaves.sort((a, b) => b.pog - a.pog);
-                          }
-                          finalChildrenOfSelf = leaves;
-                      }
-
-                      const selfNode = {
-                          name: node.name,
-                          level: node.level,
-                          children: finalChildrenOfSelf,
-                          isExpandable: finalChildrenOfSelf.length > 0,
-                          teamChildren: [],
-                          ...ownPog
-                      };
-
-                      return [selfNode, ...(node.teamChildren || [])];
-                  } else {
-                      return node.teamChildren || [];
-                  }
+                if (userLevel <= 3) {
+                  const directKData = g.childrenMap[node.name] || {
+                    lastQty: 0,
+                    currentQty: 0,
+                    pog: 0,
+                    sellIn: 0,
+                    sellOut: 0,
+                    totalInv: 0,
+                    idleStock: 0,
+                  };
+                  const selfNode = {
+                    name: node.name,
+                    level: node.level,
+                    children: [],
+                    isExpandable: false,
+                    teamChildren: [],
+                    ...directKData,
+                  };
+                  return [selfNode, ...(node.teamChildren || [])];
+                } else {
+                  return node.teamChildren || [];
+                }
               }
               return [node];
-          });
-      }
+            });
 
-      const groups: Record<string, any> = {};
-      filteredData.forEach(item => {
-          let key = item.hybrid || 'Unknown';
-          if (pogGroupBy === 'area') key = item.area || 'Unknown';
-          else if (pogGroupBy === 'category') key = item.category || 'Unknown';
-          else if (pogGroupBy === 'crops') key = item.crops || 'Unknown';
-
-          if (!groups[key]) {
-              groups[key] = { name: key, lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0, childrenMap: {} };
-              if (pogSubGroupBy === 'subordinate') {
-                  activePogMembers.forEach(m => {
-                      groups[key].childrenMap[m] = { name: m, lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-                  });
-              }
+          const hasGroupActivity =
+            g.lastQty > 0 ||
+            g.currentQty > 0 ||
+            g.sellIn > 0 ||
+            g.sellOut > 0 ||
+            g.totalInv > 0 ||
+            g.pog !== 0;
+          if (children.length === 0 && !hasGroupActivity) {
+            return null;
           }
-          groups[key].lastQty += item.lastQty;
-          groups[key].currentQty += item.currentQty;
-          groups[key].sellIn += (item.sellIn || 0);
-          groups[key].sellOut += (item.sellOut || 0);
-          groups[key].totalInv += (item.totalInv || 0);
-          groups[key].pog += item.pog;
-          groups[key].idleStock += (item.idleStock || 0);
+        } else {
+          children = Object.values(g.childrenMap);
 
-          // Drill down
-          let subKey = 'Unknown';
-          if (pogSubGroupBy === 'channel') subKey = item.kiosk || 'Unknown Channel';
-          else if (pogSubGroupBy === 'hybrid') subKey = item.hybrid || 'Unknown';
-          else if (pogSubGroupBy === 'subordinate') {
-              const matched = activePogMembers.find(m => cleanForMatch(m) === cleanForMatch(item.pic));
-              subKey = matched || item.pic || 'Unknown';
-          }
-          else if (pogSubGroupBy === 'area') subKey = item.area || 'Unknown';
-          else if (pogSubGroupBy === 'category') subKey = item.category || 'Unknown';
-          else if (pogSubGroupBy === 'crops') subKey = item.crops || 'Unknown';
-
-          if (!groups[key].childrenMap[subKey]) {
-              groups[key].childrenMap[subKey] = { name: subKey, lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-              if (pogSubGroupBy === 'channel') {
-                  groups[key].childrenMap[subKey].category = item.category;
-              }
-          }
-          groups[key].childrenMap[subKey].lastQty += item.lastQty;
-          groups[key].childrenMap[subKey].currentQty += item.currentQty;
-          groups[key].childrenMap[subKey].sellIn += (item.sellIn || 0);
-          groups[key].childrenMap[subKey].sellOut += (item.sellOut || 0);
-          groups[key].childrenMap[subKey].totalInv += (item.totalInv || 0);
-          groups[key].childrenMap[subKey].pog += item.pog;
-          groups[key].childrenMap[subKey].idleStock += (item.idleStock || 0);
-      });
-      
-      const subMembersUplines: Record<string, string | null> = {};
-      const subDirectSubsMap: Record<string, string[]> = {};
-      let subRootMembers: string[] = [];
-      if (pogSubGroupBy === 'subordinate') {
-          activePogMembers.forEach(m => {
-              subMembersUplines[m] = getUplineInTeam(m, activePogMembers, teamUpLines);
-          });
-          subRootMembers = activePogMembers.filter(m => subMembersUplines[m] === null);
-          subRootMembers.sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
-
-          activePogMembers.forEach(m => {
-              const upl = subMembersUplines[m];
-              if (upl !== null) {
-                  const uplClean = cleanForMatch(upl);
-                  if (!subDirectSubsMap[uplClean]) {
-                      subDirectSubsMap[uplClean] = [];
-                  }
-                  subDirectSubsMap[uplClean].push(m);
-              }
-          });
-
-          Object.keys(subDirectSubsMap).forEach(key => {
-              subDirectSubsMap[key].sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
-          });
-      }
-
-      return Object.values(groups).map((g: any) => {
-          let children = [];
-          
-          if (pogSubGroupBy === 'subordinate') {
-              const buildTeamPogNode = (mName: string): any => {
-                  const mNameClean = cleanForMatch(mName);
-                  const directSubs = subDirectSubsMap[mNameClean] || [];
-
-                  const directKData = g.childrenMap[mName] || { name: mName, lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-                  const childrenNodes = directSubs.map(sub => buildTeamPogNode(sub)).filter(Boolean);
-
-                  const transData = { ...directKData };
-                  childrenNodes.forEach(child => {
-                      transData.lastQty += child.lastQty || 0;
-                      transData.currentQty += child.currentQty || 0;
-                      transData.sellIn += child.sellIn || 0;
-                      transData.sellOut += child.sellOut || 0;
-                      transData.totalInv += child.totalInv || 0;
-                      transData.pog += child.pog || 0;
-                      transData.idleStock += child.idleStock || 0;
-                  });
-
-                  const hasSelfActivity = directKData.lastQty > 0 || directKData.currentQty > 0 || directKData.sellIn > 0 || directKData.sellOut > 0 || directKData.totalInv > 0 || directKData.pog !== 0;
-                  const hasChildrenActivity = childrenNodes.length > 0;
-
-                  if (pogGroupBy !== 'subordinate' && !hasSelfActivity && !hasChildrenActivity) {
-                      return null;
-                  }
-
-                  return {
-                      name: mName,
-                      level: getMemberLevel(mName, teamLevels, teamPositions, userData),
-                      children: childrenNodes,
-                      isExpandable: childrenNodes.length > 0,
-                      teamChildren: childrenNodes,
-                      ...transData
-                  };
-              };
-
-              children = subRootMembers.map(m => buildTeamPogNode(m)).filter(Boolean).flatMap(node => {
-                  if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
-                      if (userLevel <= 3) {
-                          const directKData = g.childrenMap[node.name] || { lastQty: 0, currentQty: 0, pog: 0, sellIn: 0, sellOut: 0, totalInv: 0, idleStock: 0 };
-                          const selfNode = {
-                              name: node.name,
-                              level: node.level,
-                              children: [],
-                              isExpandable: false,
-                              teamChildren: [],
-                              ...directKData
-                          };
-                          return [selfNode, ...(node.teamChildren || [])];
-                      } else {
-                          return node.teamChildren || [];
-                      }
-                  }
-                  return [node];
-              });
-
-              const hasGroupActivity = g.lastQty > 0 || g.currentQty > 0 || g.sellIn > 0 || g.sellOut > 0 || g.totalInv > 0 || g.pog !== 0;
-              if (children.length === 0 && !hasGroupActivity) {
-                  return null;
-              }
+          if (pogSubGroupBy === "channel") {
+            const catOrder: Record<string, number> = {
+              Distributor: 1,
+              R1: 2,
+              R2: 3,
+            };
+            children.sort((a: any, b: any) => {
+              const wA = catOrder[a.category] || 99;
+              const wB = catOrder[b.category] || 99;
+              if (wA !== wB) return wA - wB;
+              return b.pog - a.pog;
+            });
           } else {
-              children = Object.values(g.childrenMap);
-              
-              if (pogSubGroupBy === 'channel') {
-                  const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                  children.sort((a: any, b: any) => {
-                      const wA = catOrder[a.category] || 99;
-                      const wB = catOrder[b.category] || 99;
-                      if (wA !== wB) return wA - wB;
-                      return b.pog - a.pog;
-                  });
-              } else {
-                  children.sort((a: any, b: any) => b.pog - a.pog);
-              }
+            children.sort((a: any, b: any) => b.pog - a.pog);
           }
+        }
 
-          return {
-              name: g.name,
-              lastQty: g.lastQty,
-              currentQty: g.currentQty,
-              sellIn: g.sellIn,
-              sellOut: g.sellOut,
-              totalInv: g.totalInv,
-              idleStock: g.idleStock,
-              pog: g.pog,
-              isExpandable: true,
-              children
-          };
-      }).filter(Boolean).sort((a, b) => b.pog - a.pog);
-  }, [pogDataProcessed, pogGroupBy, pogSubGroupBy, pogFilterCrop, activePogMembers, kiosks, userData, teamSubordinates, teamPositions, teamUpLines, teamLevels, teamAreas, employees]);
+        return {
+          name: g.name,
+          lastQty: g.lastQty,
+          currentQty: g.currentQty,
+          sellIn: g.sellIn,
+          sellOut: g.sellOut,
+          totalInv: g.totalInv,
+          idleStock: g.idleStock,
+          pog: g.pog,
+          isExpandable: true,
+          children,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.pog - a.pog);
+  }, [
+    pogDataProcessed,
+    pogGroupBy,
+    pogSubGroupBy,
+    pogFilterCrop,
+    activePogMembers,
+    kiosks,
+    userData,
+    teamSubordinates,
+    teamPositions,
+    teamUpLines,
+    teamLevels,
+    teamAreas,
+    employees,
+  ]);
 
   // Ekstrak data list crops unik untuk filter
   const availableCrops = useMemo(() => {
     const cropSet = new Set<string>();
-    pogDataProcessed.forEach(item => {
-      const crop = String(item.crops || '').trim();
+    pogDataProcessed.forEach((item) => {
+      const crop = String(item.crops || "").trim();
       if (crop) {
         cropSet.add(crop);
       }
     });
-    return ['All', ...Array.from(cropSet).sort()];
+    return ["All", ...Array.from(cropSet).sort()];
   }, [pogDataProcessed]);
 
   // Filter team members based on selected crop filter
   const activeTeamMembers = useMemo(() => {
-    if (!summaryFilterCrop || summaryFilterCrop === 'All') return teamMembers;
-    
+    if (!summaryFilterCrop || summaryFilterCrop === "All") return teamMembers;
+
     // Fallback mode: if group column info is empty or not in Google Sheet yet,
     // filter members by their matching recorded crop in workingData so they always see correct data.
     // A member is kept if they (or any of their subordinates recursively) have working data with the selected crop.
     const kiosksMapByCleanName: Record<string, any> = {};
-      kiosks.forEach(k => {
-          kiosksMapByCleanName[cleanForMatch(k.name)] = k;
-      });
-      const teamMembersMapByCleanName: Record<string, string> = {};
-      teamMembers.forEach(m => {
-          teamMembersMapByCleanName[cleanForMatch(m)] = m;
-      });
-      const getTeamMemberMatch = (name: string): string | undefined => {
-          const clean = cleanForMatch(name);
-          if (teamMembersMapByCleanName[clean]) return teamMembersMapByCleanName[clean];
-          return teamMembers.find(m => matchNames(m, name));
-      };
+    kiosks.forEach((k) => {
+      kiosksMapByCleanName[cleanForMatch(k.name)] = k;
+    });
+    const teamMembersMapByCleanName: Record<string, string> = {};
+    teamMembers.forEach((m) => {
+      teamMembersMapByCleanName[cleanForMatch(m)] = m;
+    });
+    const getTeamMemberMatch = (name: string): string | undefined => {
+      const clean = cleanForMatch(name);
+      if (teamMembersMapByCleanName[clean])
+        return teamMembersMapByCleanName[clean];
+      return teamMembers.find((m) => matchNames(m, name));
+    };
 
-      const matchedMembersWithCrop = new Set<string>();
-      workingData.forEach(item => {
-        const itemCrop = String(item.crops || '').trim().toLowerCase();
-        if (checkCropMatch(itemCrop, summaryFilterCrop)) {
-          const kClean = cleanForMatch(item.kiosk);
-          const kioskInfo = kiosksMapByCleanName[kClean] || {};
-          const rawPic = normalizeName(String(item.user || kioskInfo.pic || 'Unknown'));
-          const picName = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-          const matchedMember = getTeamMemberMatch(picName);
-          if (matchedMember) {
-            matchedMembersWithCrop.add(cleanForMatch(matchedMember));
-          }
+    const matchedMembersWithCrop = new Set<string>();
+    workingData.forEach((item) => {
+      const itemCrop = String(item.crops || "")
+        .trim()
+        .toLowerCase();
+      if (checkCropMatch(itemCrop, summaryFilterCrop)) {
+        const kClean = cleanForMatch(item.kiosk);
+        const kioskInfo = kiosksMapByCleanName[kClean] || {};
+        const rawPic = normalizeName(
+          String(item.user || kioskInfo.pic || "Unknown"),
+        );
+        const picName = getDdaOfUser(
+          rawPic,
+          userData?.name,
+          userData?.teamProfiles,
+        );
+        const matchedMember = getTeamMemberMatch(picName);
+        if (matchedMember) {
+          matchedMembersWithCrop.add(cleanForMatch(matchedMember));
         }
-      });
+      }
+    });
 
-      // Propagate active status upwards
-      const activeSet = new Set<string>();
-      activeSet.add(cleanForMatch(userData?.name)); // Always keep self
+    // Propagate active status upwards
+    const activeSet = new Set<string>();
+    activeSet.add(cleanForMatch(userData?.name)); // Always keep self
 
-      teamMembers.forEach(m => {
-        const mClean = cleanForMatch(m);
-        if (matchedMembersWithCrop.has(mClean)) {
-          activeSet.add(mClean);
-          let current = m;
-          for (let i = 0; i < 15; i++) { // Max depth protection
-            const upRaw = getFromRecord<string>(teamUpLines, current);
-            if (!upRaw) break;
-            
-            // Match against actual teamMembers to handle partial names
-            const up = getTeamMemberMatch(upRaw as string) || upRaw as string;
-            
-            const upClean = cleanForMatch(up);
-            if (activeSet.has(upClean)) {
-                // Already processed this branch upwards, can break early
-                break;
-            }
-            activeSet.add(upClean);
-            current = up;
+    teamMembers.forEach((m) => {
+      const mClean = cleanForMatch(m);
+      if (matchedMembersWithCrop.has(mClean)) {
+        activeSet.add(mClean);
+        let current = m;
+        for (let i = 0; i < 15; i++) {
+          // Max depth protection
+          const upRaw = getFromRecord<string>(teamUpLines, current);
+          if (!upRaw) break;
+
+          // Match against actual teamMembers to handle partial names
+          const up = getTeamMemberMatch(upRaw as string) || (upRaw as string);
+
+          const upClean = cleanForMatch(up);
+          if (activeSet.has(upClean)) {
+            // Already processed this branch upwards, can break early
+            break;
           }
+          activeSet.add(upClean);
+          current = up;
         }
-      });
+      }
+    });
 
-      return teamMembers.filter(m => activeSet.has(cleanForMatch(m)));
-  }, [teamMembers, summaryFilterCrop, employees, userData, workingData, kiosks, teamUpLines]);
+    return teamMembers.filter((m) => activeSet.has(cleanForMatch(m)));
+  }, [
+    teamMembers,
+    summaryFilterCrop,
+    employees,
+    userData,
+    workingData,
+    kiosks,
+    teamUpLines,
+  ]);
 
   const summaryData = useMemo(() => {
     const picToUplineMap: Record<string, string> = {};
-    kiosks.forEach(k => {
-        const p = String(k.pic || '').trim();
-        const u = String(k.upline || '').trim();
-        if (p && u) {
-            picToUplineMap[p.toLowerCase()] = normalizeName(u);
-        }
+    kiosks.forEach((k) => {
+      const p = String(k.pic || "").trim();
+      const u = String(k.upline || "").trim();
+      if (p && u) {
+        picToUplineMap[p.toLowerCase()] = normalizeName(u);
+      }
     });
-    picToUplineMap['listianto'] = 'AGUS HERDIANTO';
+    picToUplineMap["listianto"] = "AGUS HERDIANTO";
 
     // Pre-compute maps to optimize from O(N * M) to O(N + M)
     const kiosksMapByCleanName: Record<string, any> = {};
-    kiosks.forEach(k => {
-        kiosksMapByCleanName[cleanForMatch(k.name)] = k;
+    kiosks.forEach((k) => {
+      kiosksMapByCleanName[cleanForMatch(k.name)] = k;
     });
 
     const teamMembersMapByCleanName: Record<string, string> = {};
-    activeTeamMembers.forEach(m => {
-        teamMembersMapByCleanName[cleanForMatch(m)] = m;
+    activeTeamMembers.forEach((m) => {
+      teamMembersMapByCleanName[cleanForMatch(m)] = m;
     });
     const getTeamMemberMatch = (name: string): string | undefined => {
-        const clean = cleanForMatch(name);
-        if (teamMembersMapByCleanName[clean]) return teamMembersMapByCleanName[clean];
-        return activeTeamMembers.find(m => matchNames(m, name));
+      const clean = cleanForMatch(name);
+      if (teamMembersMapByCleanName[clean])
+        return teamMembersMapByCleanName[clean];
+      return activeTeamMembers.find((m) => matchNames(m, name));
     };
 
     const parseDate = (timestamp: any) => {
-        if (!timestamp) return null;
-        let d;
-        if (typeof timestamp === 'string' && timestamp.includes('/')) {
-            const parts = timestamp.split(/[\s/:]+/);
-            if (parts.length >= 3) {
-                d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${parts[3]||'00'}:${parts[4]||'00'}:${parts[5]||'00'}`);
-            } else d = new Date(timestamp);
-        } else {
-            d = new Date(timestamp);
-        }
-        return d && !isNaN(d.getTime()) ? d : null;
+      if (!timestamp) return null;
+      let d;
+      if (typeof timestamp === "string" && timestamp.includes("/")) {
+        const parts = timestamp.split(/[\s/:]+/);
+        if (parts.length >= 3) {
+          d = new Date(
+            `${parts[2]}-${parts[1]}-${parts[0]}T${parts[3] || "00"}:${parts[4] || "00"}:${parts[5] || "00"}`,
+          );
+        } else d = new Date(timestamp);
+      } else {
+        d = new Date(timestamp);
+      }
+      return d && !isNaN(d.getTime()) ? d : null;
     };
-    
-    const enrichedData = workingData.map(item => {
-        const d = parseDate(item.timestamp);
-        const itemMonth = d ? d.getMonth() : null;
-        const itemYear = d ? d.getFullYear() : null;
-        
-        const kClean = cleanForMatch(item.kiosk);
-        const kioskInfo = kiosksMapByCleanName[kClean] || {};
-        const rawPic = normalizeName(String(item.user || kioskInfo.pic || 'Unknown'));
-        const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
-        let upline = normalizeName(String(kioskInfo.upline || ''));
-        if (pic.toLowerCase() === 'listianto') {
-            upline = 'AGUS HERDIANTO';
-        } else {
-            const matchedMember = getTeamMemberMatch(pic);
-            const foundUp = getFromRecord<string>(teamUpLines, matchedMember || pic);
-            if (foundUp) {
-                upline = normalizeName(foundUp);
-            } else if (!upline && pic !== 'Unknown') {
-                const foundUpline = picToUplineMap[pic.toLowerCase()];
-                if (foundUpline) upline = normalizeName(foundUpline);
-            }
-        }
-        let area = '-';
-        const cleanPic = cleanForMatch(pic);
-        const matchedMember = getTeamMemberMatch(pic);
-        const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
-        if (foundArea) {
-            area = foundArea;
-        } else if (cleanPic === cleanForMatch(userData?.name)) {
-            area = userData?.area || '-';
-        }
-        
-        const category = String(kioskInfo.category || 'Uncategorized').trim();
 
-        let cluster = "Uncategorized";
-        const aging = Number(item.aging);
-        if (!isNaN(aging)) {
-            if (aging <= 2) cluster = "0-2";
-            else if (aging <= 4) cluster = "2-4";
-            else if (aging <= 6) cluster = "4-6";
-            else if (aging <= 9) cluster = "6-9";
-            else if (aging <= 12) cluster = "9-12";
-            else cluster = ">12";
+    const enrichedData = workingData.map((item) => {
+      const d = parseDate(item.timestamp);
+      const itemMonth = d ? d.getMonth() : null;
+      const itemYear = d ? d.getFullYear() : null;
+
+      const kClean = cleanForMatch(item.kiosk);
+      const kioskInfo = kiosksMapByCleanName[kClean] || {};
+      const rawPic = normalizeName(
+        String(item.user || kioskInfo.pic || "Unknown"),
+      );
+      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      let upline = normalizeName(String(kioskInfo.upline || ""));
+      if (pic.toLowerCase() === "listianto") {
+        upline = "AGUS HERDIANTO";
+      } else {
+        const matchedMember = getTeamMemberMatch(pic);
+        const foundUp = getFromRecord<string>(
+          teamUpLines,
+          matchedMember || pic,
+        );
+        if (foundUp) {
+          upline = normalizeName(foundUp);
+        } else if (!upline && pic !== "Unknown") {
+          const foundUpline = picToUplineMap[pic.toLowerCase()];
+          if (foundUpline) upline = normalizeName(foundUpline);
         }
-        const crops = item.crops && String(item.crops).trim() !== '' ? item.crops : 'Uncategorized Crops';
-        return { ...item, pic, upline, area, category, cluster, hybrid: item.hybrid || 'Unknown', crops, itemMonth, itemYear };
+      }
+      let area = "-";
+      const cleanPic = cleanForMatch(pic);
+      const matchedMember = getTeamMemberMatch(pic);
+      const foundArea = getFromRecord<string>(teamAreas, matchedMember || pic);
+      if (foundArea) {
+        area = foundArea;
+      } else if (cleanPic === cleanForMatch(userData?.name)) {
+        area = userData?.area || "-";
+      }
+
+      const category = String(kioskInfo.category || "Uncategorized").trim();
+
+      let cluster = "Uncategorized";
+      const aging = Number(item.aging);
+      if (!isNaN(aging)) {
+        if (aging <= 2) cluster = "0-2";
+        else if (aging <= 4) cluster = "2-4";
+        else if (aging <= 6) cluster = "4-6";
+        else if (aging <= 9) cluster = "6-9";
+        else if (aging <= 12) cluster = "9-12";
+        else cluster = ">12";
+      }
+      const crops =
+        item.crops && String(item.crops).trim() !== ""
+          ? item.crops
+          : "Uncategorized Crops";
+      return {
+        ...item,
+        pic,
+        upline,
+        area,
+        category,
+        cluster,
+        hybrid: item.hybrid || "Unknown",
+        crops,
+        itemMonth,
+        itemYear,
+      };
     });
 
     enrichedSummaryDataRef.current = enrichedData;
 
-    const teamMembersCleanSet = new Set(activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean));
-    const nonLeafTeamMembersClean = activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean);
-    
+    const teamMembersCleanSet = new Set(
+      activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
+    );
+    const nonLeafTeamMembersClean = activeTeamMembers
+      .map((m) => cleanForMatch(m))
+      .filter(Boolean);
+
     // Filter Team AND Filter Crops (Using Set.has for O(1) performance)
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
-    const teamData = enrichedData.filter(item => {
-        const picClean = cleanForMatch(item.pic);
-        const isTeamMember = teamMembersCleanSet.has(picClean) || nonLeafTeamMembersClean.some(m => picClean.includes(m));
-        const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
+    const teamData = enrichedData.filter((item) => {
+      const picClean = cleanForMatch(item.pic);
+      const isTeamMember =
+        teamMembersCleanSet.has(picClean) ||
+        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+      const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
 
-        return isTeamMember && isCropMatch;
+      return isTeamMember && isCropMatch;
     });
 
-    if (summaryGroupBy === 'subordinate') {
-        const teamMembersUplines: Record<string, string | null> = {};
-        const directSubsMap: Record<string, string[]> = {};
-        activeTeamMembers.forEach(m => {
-            teamMembersUplines[m] = getUplineInTeam(m, activeTeamMembers, teamUpLines);
-        });
+    if (summaryGroupBy === "subordinate") {
+      const teamMembersUplines: Record<string, string | null> = {};
+      const directSubsMap: Record<string, string[]> = {};
+      activeTeamMembers.forEach((m) => {
+        teamMembersUplines[m] = getUplineInTeam(
+          m,
+          activeTeamMembers,
+          teamUpLines,
+        );
+      });
 
-        const rootMembers = activeTeamMembers.filter(m => {
-            return teamMembersUplines[m] === null;
-        });
-        rootMembers.sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
+      const rootMembers = activeTeamMembers.filter((m) => {
+        return teamMembersUplines[m] === null;
+      });
+      rootMembers.sort((a, b) =>
+        compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+      );
 
-        activeTeamMembers.forEach(m => {
-            const upl = teamMembersUplines[m];
-            if (upl !== null) {
-                const uplClean = cleanForMatch(upl);
-                if (!directSubsMap[uplClean]) {
-                    directSubsMap[uplClean] = [];
-                }
-                directSubsMap[uplClean].push(m);
-            }
-        });
+      activeTeamMembers.forEach((m) => {
+        const upl = teamMembersUplines[m];
+        if (upl !== null) {
+          const uplClean = cleanForMatch(upl);
+          if (!directSubsMap[uplClean]) {
+            directSubsMap[uplClean] = [];
+          }
+          directSubsMap[uplClean].push(m);
+        }
+      });
 
-        Object.keys(directSubsMap).forEach(key => {
-            directSubsMap[key].sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
-        });
+      Object.keys(directSubsMap).forEach((key) => {
+        directSubsMap[key].sort((a, b) =>
+          compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+        );
+      });
 
-        const buildNode = (name: string): any => {
-            const nameClean = cleanForMatch(name);
-            const directSubs = directSubsMap[nameClean] || [];
-            const myItems = teamData.filter(item => cleanForMatch(item.pic) === nameClean);
-            const childrenNodes = directSubs.map(sub => buildNode(sub));
+      const buildNode = (name: string): any => {
+        const nameClean = cleanForMatch(name);
+        const directSubs = directSubsMap[nameClean] || [];
+        const myItems = teamData.filter(
+          (item) => cleanForMatch(item.pic) === nameClean,
+        );
+        const childrenNodes = directSubs.map((sub) => buildNode(sub));
 
-            const ownData = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-            myItems.forEach(item => {
-                const stock = Number(item.stock) || 0;
-                if (ownData[item.cluster] !== undefined) ownData[item.cluster] += stock;
-                ownData.total += stock;
-            });
-
-            const transData = { ...ownData };
-            childrenNodes.forEach(child => {
-                Object.keys(ownData).forEach(key => {
-                    if (key !== 'total') {
-                        transData[key] += child[key] || 0;
-                    }
-                });
-                transData.total += child.total || 0;
-            });
-
-            let finalChildren = [];
-
-            if (summarySubGroupBy === 'subordinate') {
-                finalChildren = [...childrenNodes];
-            } else {
-                const leafGroups: Record<string, any> = {};
-                
-                // Own items
-                myItems.forEach(item => {
-                    let leafKey = 'Unknown';
-                    if (summarySubGroupBy === 'channel' || summarySubGroupBy === 'kiosk') leafKey = item.kiosk || 'Unknown Channel';
-                    else if (summarySubGroupBy === 'hybrid') leafKey = item.hybrid;
-                    else if (summarySubGroupBy === 'area') leafKey = item.area;
-                    else if (summarySubGroupBy === 'category') leafKey = item.category;
-                    else if (summarySubGroupBy === 'crops') leafKey = item.crops;
-
-                    if (!leafGroups[leafKey]) {
-                        leafGroups[leafKey] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0, category: item.category };
-                    }
-                    const stock = Number(item.stock) || 0;
-                    if (leafGroups[leafKey][item.cluster] !== undefined) {
-                        leafGroups[leafKey][item.cluster] += stock;
-                    }
-                    leafGroups[leafKey].total += stock;
-                });
-
-                // Roll up children's leaves
-                childrenNodes.forEach(child => {
-                     (child.children || []).forEach((cNode: any) => {
-                          const leafKey = cNode.name;
-                          if (!leafGroups[leafKey]) {
-                              leafGroups[leafKey] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0, category: cNode.category };
-                          }
-                          Object.keys(cNode).forEach(k => {
-                              if (k !== 'name' && k !== 'isLeaf' && k !== 'category' && k !== 'total' && k !== 'isExpandable' && k !== 'children' && k !== 'level' && k !== 'selectedTotal') {
-                                  leafGroups[leafKey][k] = (leafGroups[leafKey][k] || 0) + (cNode[k] || 0);
-                              }
-                          });
-                          leafGroups[leafKey].total += cNode.total || 0;
-                     });
-                });
-
-                let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
-                    name: leafName,
-                    isLeaf: true,
-                    ...(val as any)
-                }));
-
-                if (summarySubGroupBy === 'channel' || summarySubGroupBy === 'kiosk') {
-                    const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                    leaves.sort((a, b) => {
-                        const wA = catOrder[a.category] || 99;
-                        const wB = catOrder[b.category] || 99;
-                        if (wA !== wB) return wA - wB;
-                        return b.total - a.total;
-                    });
-                } else {
-                    leaves.sort((a, b) => b.total - a.total);
-                }
-
-                finalChildren = leaves;
-            }
-
-            return {
-                name,
-                level: getMemberLevel(name, teamLevels, teamPositions, userData),
-                children: finalChildren,
-                isExpandable: finalChildren.length > 0,
-                teamChildren: childrenNodes,
-                ...transData
-            };
+        const ownData = {
+          "0-2": 0,
+          "2-4": 0,
+          "4-6": 0,
+          "6-9": 0,
+          "9-12": 0,
+          ">12": 0,
+          Uncategorized: 0,
+          total: 0,
         };
-
-        const roots = rootMembers.map(root => buildNode(root));
-        roots.sort((a, b) => b.total - a.total);
-        return roots.flatMap(node => {
-            if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
-                if (userLevel <= 3) {
-                    const nameClean = cleanForMatch(node.name);
-                    const myItems = teamData.filter(item => cleanForMatch(item.pic) === nameClean);
-
-                    const ownData = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-                    myItems.forEach(item => {
-                        const stock = Number(item.stock) || 0;
-                        if (ownData[item.cluster] !== undefined) ownData[item.cluster] += stock;
-                        ownData.total += stock;
-                    });
-
-                    let finalChildrenOfSelf = [];
-                    if (summarySubGroupBy !== 'subordinate') {
-                        const leafGroups: Record<string, any> = {};
-                        myItems.forEach(item => {
-                            let leafKey = 'Unknown';
-                            if (summarySubGroupBy === 'channel' || summarySubGroupBy === 'kiosk') leafKey = item.kiosk || 'Unknown Channel';
-                            else if (summarySubGroupBy === 'hybrid') leafKey = item.hybrid;
-                            else if (summarySubGroupBy === 'area') leafKey = item.area;
-                            else if (summarySubGroupBy === 'category') leafKey = item.category;
-                            else if (summarySubGroupBy === 'crops') leafKey = item.crops;
-
-                            if (!leafGroups[leafKey]) {
-                                leafGroups[leafKey] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0, category: item.category };
-                            }
-                            const stock = Number(item.stock) || 0;
-                            if (leafGroups[leafKey][item.cluster] !== undefined) {
-                                leafGroups[leafKey][item.cluster] += stock;
-                            }
-                            leafGroups[leafKey].total += stock;
-                        });
-
-                        let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
-                            name: leafName,
-                            isLeaf: true,
-                            ...(val as any)
-                        }));
-
-                        if (summarySubGroupBy === 'channel' || summarySubGroupBy === 'kiosk') {
-                            const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                            leaves.sort((a, b) => {
-                                const wA = catOrder[a.category] || 99;
-                                const wB = catOrder[b.category] || 99;
-                                if (wA !== wB) return wA - wB;
-                                return b.total - a.total;
-                            });
-                        } else {
-                            leaves.sort((a, b) => b.total - a.total);
-                        }
-                        finalChildrenOfSelf = leaves;
-                    }
-
-                    const selfNode = {
-                        name: node.name,
-                        level: node.level,
-                        children: finalChildrenOfSelf,
-                        isExpandable: finalChildrenOfSelf.length > 0,
-                        teamChildren: [],
-                        ...ownData
-                    };
-
-                    return [selfNode, ...(node.teamChildren || [])];
-                } else {
-                    return node.teamChildren || [];
-                }
-            }
-            return [node];
+        myItems.forEach((item) => {
+          const stock = Number(item.stock) || 0;
+          if (ownData[item.cluster] !== undefined)
+            ownData[item.cluster] += stock;
+          ownData.total += stock;
         });
+
+        const transData = { ...ownData };
+        childrenNodes.forEach((child) => {
+          Object.keys(ownData).forEach((key) => {
+            if (key !== "total") {
+              transData[key] += child[key] || 0;
+            }
+          });
+          transData.total += child.total || 0;
+        });
+
+        let finalChildren = [];
+
+        if (summarySubGroupBy === "subordinate") {
+          finalChildren = [...childrenNodes];
+        } else {
+          const leafGroups: Record<string, any> = {};
+
+          // Own items
+          myItems.forEach((item) => {
+            let leafKey = "Unknown";
+            if (
+              summarySubGroupBy === "channel" ||
+              summarySubGroupBy === "kiosk"
+            )
+              leafKey = item.kiosk || "Unknown Channel";
+            else if (summarySubGroupBy === "hybrid") leafKey = item.hybrid;
+            else if (summarySubGroupBy === "area") leafKey = item.area;
+            else if (summarySubGroupBy === "category") leafKey = item.category;
+            else if (summarySubGroupBy === "crops") leafKey = item.crops;
+
+            if (!leafGroups[leafKey]) {
+              leafGroups[leafKey] = {
+                "0-2": 0,
+                "2-4": 0,
+                "4-6": 0,
+                "6-9": 0,
+                "9-12": 0,
+                ">12": 0,
+                Uncategorized: 0,
+                total: 0,
+                category: item.category,
+              };
+            }
+            const stock = Number(item.stock) || 0;
+            if (leafGroups[leafKey][item.cluster] !== undefined) {
+              leafGroups[leafKey][item.cluster] += stock;
+            }
+            leafGroups[leafKey].total += stock;
+          });
+
+          // Roll up children's leaves
+          childrenNodes.forEach((child) => {
+            (child.children || []).forEach((cNode: any) => {
+              const leafKey = cNode.name;
+              if (!leafGroups[leafKey]) {
+                leafGroups[leafKey] = {
+                  "0-2": 0,
+                  "2-4": 0,
+                  "4-6": 0,
+                  "6-9": 0,
+                  "9-12": 0,
+                  ">12": 0,
+                  Uncategorized: 0,
+                  total: 0,
+                  category: cNode.category,
+                };
+              }
+              Object.keys(cNode).forEach((k) => {
+                if (
+                  k !== "name" &&
+                  k !== "isLeaf" &&
+                  k !== "category" &&
+                  k !== "total" &&
+                  k !== "isExpandable" &&
+                  k !== "children" &&
+                  k !== "level" &&
+                  k !== "selectedTotal"
+                ) {
+                  leafGroups[leafKey][k] =
+                    (leafGroups[leafKey][k] || 0) + (cNode[k] || 0);
+                }
+              });
+              leafGroups[leafKey].total += cNode.total || 0;
+            });
+          });
+
+          let leaves = Object.entries(leafGroups).map(([leafName, val]) => ({
+            name: leafName,
+            isLeaf: true,
+            ...(val as any),
+          }));
+
+          if (
+            summarySubGroupBy === "channel" ||
+            summarySubGroupBy === "kiosk"
+          ) {
+            const catOrder: Record<string, number> = {
+              Distributor: 1,
+              R1: 2,
+              R2: 3,
+            };
+            leaves.sort((a, b) => {
+              const wA = catOrder[a.category] || 99;
+              const wB = catOrder[b.category] || 99;
+              if (wA !== wB) return wA - wB;
+              return b.total - a.total;
+            });
+          } else {
+            leaves.sort((a, b) => b.total - a.total);
+          }
+
+          finalChildren = leaves;
+        }
+
+        return {
+          name,
+          level: getMemberLevel(name, teamLevels, teamPositions, userData),
+          children: finalChildren,
+          isExpandable: finalChildren.length > 0,
+          teamChildren: childrenNodes,
+          ...transData,
+        };
+      };
+
+      const roots = rootMembers.map((root) => buildNode(root));
+      roots.sort((a, b) => b.total - a.total);
+      return roots.flatMap((node) => {
+        if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
+          if (userLevel <= 3) {
+            const nameClean = cleanForMatch(node.name);
+            const myItems = teamData.filter(
+              (item) => cleanForMatch(item.pic) === nameClean,
+            );
+
+            const ownData = {
+              "0-2": 0,
+              "2-4": 0,
+              "4-6": 0,
+              "6-9": 0,
+              "9-12": 0,
+              ">12": 0,
+              Uncategorized: 0,
+              total: 0,
+            };
+            myItems.forEach((item) => {
+              const stock = Number(item.stock) || 0;
+              if (ownData[item.cluster] !== undefined)
+                ownData[item.cluster] += stock;
+              ownData.total += stock;
+            });
+
+            let finalChildrenOfSelf = [];
+            if (summarySubGroupBy !== "subordinate") {
+              const leafGroups: Record<string, any> = {};
+              myItems.forEach((item) => {
+                let leafKey = "Unknown";
+                if (
+                  summarySubGroupBy === "channel" ||
+                  summarySubGroupBy === "kiosk"
+                )
+                  leafKey = item.kiosk || "Unknown Channel";
+                else if (summarySubGroupBy === "hybrid") leafKey = item.hybrid;
+                else if (summarySubGroupBy === "area") leafKey = item.area;
+                else if (summarySubGroupBy === "category")
+                  leafKey = item.category;
+                else if (summarySubGroupBy === "crops") leafKey = item.crops;
+
+                if (!leafGroups[leafKey]) {
+                  leafGroups[leafKey] = {
+                    "0-2": 0,
+                    "2-4": 0,
+                    "4-6": 0,
+                    "6-9": 0,
+                    "9-12": 0,
+                    ">12": 0,
+                    Uncategorized: 0,
+                    total: 0,
+                    category: item.category,
+                  };
+                }
+                const stock = Number(item.stock) || 0;
+                if (leafGroups[leafKey][item.cluster] !== undefined) {
+                  leafGroups[leafKey][item.cluster] += stock;
+                }
+                leafGroups[leafKey].total += stock;
+              });
+
+              let leaves = Object.entries(leafGroups).map(
+                ([leafName, val]) => ({
+                  name: leafName,
+                  isLeaf: true,
+                  ...(val as any),
+                }),
+              );
+
+              if (
+                summarySubGroupBy === "channel" ||
+                summarySubGroupBy === "kiosk"
+              ) {
+                const catOrder: Record<string, number> = {
+                  Distributor: 1,
+                  R1: 2,
+                  R2: 3,
+                };
+                leaves.sort((a, b) => {
+                  const wA = catOrder[a.category] || 99;
+                  const wB = catOrder[b.category] || 99;
+                  if (wA !== wB) return wA - wB;
+                  return b.total - a.total;
+                });
+              } else {
+                leaves.sort((a, b) => b.total - a.total);
+              }
+              finalChildrenOfSelf = leaves;
+            }
+
+            const selfNode = {
+              name: node.name,
+              level: node.level,
+              children: finalChildrenOfSelf,
+              isExpandable: finalChildrenOfSelf.length > 0,
+              teamChildren: [],
+              ...ownData,
+            };
+
+            return [selfNode, ...(node.teamChildren || [])];
+          } else {
+            return node.teamChildren || [];
+          }
+        }
+        return [node];
+      });
     }
 
     const groups: Record<string, any> = {};
-    teamData.forEach(item => {
-        let key = 'Unknown';
-        if (summaryGroupBy === 'hybrid') key = item.hybrid;
-        else if (summaryGroupBy === 'area') key = item.area;
-        else if (summaryGroupBy === 'category') key = item.category;
-        else if (summaryGroupBy === 'crops') key = item.crops;
+    teamData.forEach((item) => {
+      let key = "Unknown";
+      if (summaryGroupBy === "hybrid") key = item.hybrid;
+      else if (summaryGroupBy === "area") key = item.area;
+      else if (summaryGroupBy === "category") key = item.category;
+      else if (summaryGroupBy === "crops") key = item.crops;
 
-        if (!groups[key]) {
-            groups[key] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0, childrenMap: {} };
-            if (summarySubGroupBy === 'subordinate') {
-                activeTeamMembers.forEach(m => {
-                    groups[key].childrenMap[m] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-                });
-            }
+      if (!groups[key]) {
+        groups[key] = {
+          "0-2": 0,
+          "2-4": 0,
+          "4-6": 0,
+          "6-9": 0,
+          "9-12": 0,
+          ">12": 0,
+          Uncategorized: 0,
+          total: 0,
+          childrenMap: {},
+        };
+        if (summarySubGroupBy === "subordinate") {
+          activeTeamMembers.forEach((m) => {
+            groups[key].childrenMap[m] = {
+              "0-2": 0,
+              "2-4": 0,
+              "4-6": 0,
+              "6-9": 0,
+              "9-12": 0,
+              ">12": 0,
+              Uncategorized: 0,
+              total: 0,
+            };
+          });
         }
-        const stock = Number(item.stock) || 0;
-        if (groups[key][item.cluster] !== undefined) {
-            groups[key][item.cluster] += stock;
-        }
-        groups[key].total += stock;
+      }
+      const stock = Number(item.stock) || 0;
+      if (groups[key][item.cluster] !== undefined) {
+        groups[key][item.cluster] += stock;
+      }
+      groups[key].total += stock;
 
-        // Sub-item
-        let subKey = 'Unknown';
-        if (summarySubGroupBy === 'channel') subKey = item.kiosk || 'Unknown Channel';
-        else if (summarySubGroupBy === 'hybrid') subKey = item.hybrid;
-        else if (summarySubGroupBy === 'subordinate') {
-            const matched = activeTeamMembers.find(m => cleanForMatch(m) === cleanForMatch(item.pic));
-            subKey = matched || item.pic;
-        }
-        else if (summarySubGroupBy === 'area') subKey = item.area;
-        else if (summarySubGroupBy === 'category') subKey = item.category;
-        else if (summarySubGroupBy === 'crops') subKey = item.crops;
+      // Sub-item
+      let subKey = "Unknown";
+      if (summarySubGroupBy === "channel")
+        subKey = item.kiosk || "Unknown Channel";
+      else if (summarySubGroupBy === "hybrid") subKey = item.hybrid;
+      else if (summarySubGroupBy === "subordinate") {
+        const matched = activeTeamMembers.find(
+          (m) => cleanForMatch(m) === cleanForMatch(item.pic),
+        );
+        subKey = matched || item.pic;
+      } else if (summarySubGroupBy === "area") subKey = item.area;
+      else if (summarySubGroupBy === "category") subKey = item.category;
+      else if (summarySubGroupBy === "crops") subKey = item.crops;
 
-        if (!groups[key].childrenMap[subKey]) {
-            groups[key].childrenMap[subKey] = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-            if (summarySubGroupBy === 'channel') {
-                groups[key].childrenMap[subKey].category = item.category;
-            }
+      if (!groups[key].childrenMap[subKey]) {
+        groups[key].childrenMap[subKey] = {
+          "0-2": 0,
+          "2-4": 0,
+          "4-6": 0,
+          "6-9": 0,
+          "9-12": 0,
+          ">12": 0,
+          Uncategorized: 0,
+          total: 0,
+        };
+        if (summarySubGroupBy === "channel") {
+          groups[key].childrenMap[subKey].category = item.category;
         }
-        if (groups[key].childrenMap[subKey][item.cluster] !== undefined) {
-            groups[key].childrenMap[subKey][item.cluster] += stock;
-        }
-        groups[key].childrenMap[subKey].total += stock;
+      }
+      if (groups[key].childrenMap[subKey][item.cluster] !== undefined) {
+        groups[key].childrenMap[subKey][item.cluster] += stock;
+      }
+      groups[key].childrenMap[subKey].total += stock;
     });
 
     const sumMembersUplines: Record<string, string | null> = {};
     const sumDirectSubsMap: Record<string, string[]> = {};
     let sumRootMembers: string[] = [];
-    if (summarySubGroupBy === 'subordinate') {
-        activeTeamMembers.forEach(m => {
-            sumMembersUplines[m] = getUplineInTeam(m, activeTeamMembers, teamUpLines);
-        });
-        sumRootMembers = activeTeamMembers.filter(m => sumMembersUplines[m] === null);
-        sumRootMembers.sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
+    if (summarySubGroupBy === "subordinate") {
+      activeTeamMembers.forEach((m) => {
+        sumMembersUplines[m] = getUplineInTeam(
+          m,
+          activeTeamMembers,
+          teamUpLines,
+        );
+      });
+      sumRootMembers = activeTeamMembers.filter(
+        (m) => sumMembersUplines[m] === null,
+      );
+      sumRootMembers.sort((a, b) =>
+        compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+      );
 
-        activeTeamMembers.forEach(m => {
-            const upl = sumMembersUplines[m];
-            if (upl !== null) {
-                const uplClean = cleanForMatch(upl);
-                if (!sumDirectSubsMap[uplClean]) {
-                    sumDirectSubsMap[uplClean] = [];
-                }
-                sumDirectSubsMap[uplClean].push(m);
-            }
-        });
+      activeTeamMembers.forEach((m) => {
+        const upl = sumMembersUplines[m];
+        if (upl !== null) {
+          const uplClean = cleanForMatch(upl);
+          if (!sumDirectSubsMap[uplClean]) {
+            sumDirectSubsMap[uplClean] = [];
+          }
+          sumDirectSubsMap[uplClean].push(m);
+        }
+      });
 
-        Object.keys(sumDirectSubsMap).forEach(key => {
-            sumDirectSubsMap[key].sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData));
-        });
+      Object.keys(sumDirectSubsMap).forEach((key) => {
+        sumDirectSubsMap[key].sort((a, b) =>
+          compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+        );
+      });
     }
 
-    return Object.entries(groups).map(([name, counts]) => {
+    return Object.entries(groups)
+      .map(([name, counts]) => {
         const countsVal = counts as any;
         let children = [];
 
-        if (summarySubGroupBy === 'subordinate') {
-            const buildTeamNode = (mName: string): any => {
-                const mNameClean = cleanForMatch(mName);
-                const directSubs = sumDirectSubsMap[mNameClean] || [];
+        if (summarySubGroupBy === "subordinate") {
+          const buildTeamNode = (mName: string): any => {
+            const mNameClean = cleanForMatch(mName);
+            const directSubs = sumDirectSubsMap[mNameClean] || [];
 
-                const directKData = countsVal.childrenMap[mName] || { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-                const childrenNodes = directSubs.map(sub => buildTeamNode(sub));
-
-                const transData = { ...directKData };
-                childrenNodes.forEach(child => {
-                    Object.keys(directKData).forEach(k => {
-                        if (k !== 'total' && k !== 'category') {
-                            transData[k] = (transData[k] || 0) + (child[k] || 0);
-                        }
-                    });
-                    transData.total = (transData.total || 0) + (child.total || 0);
-                });
-
-                return {
-                    name: mName,
-                    level: getMemberLevel(mName, teamLevels, teamPositions, userData),
-                    children: childrenNodes,
-                    isExpandable: childrenNodes.length > 0,
-                    teamChildren: childrenNodes,
-                    ...transData
-                };
+            const directKData = countsVal.childrenMap[mName] || {
+              "0-2": 0,
+              "2-4": 0,
+              "4-6": 0,
+              "6-9": 0,
+              "9-12": 0,
+              ">12": 0,
+              Uncategorized: 0,
+              total: 0,
             };
+            const childrenNodes = directSubs.map((sub) => buildTeamNode(sub));
 
-            children = sumRootMembers.map(m => buildTeamNode(m)).flatMap(node => {
-                if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
-                    if (userLevel <= 3) {
-                        const directKData = countsVal.childrenMap[node.name] || { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, total: 0 };
-                        const selfNode = {
-                            name: node.name,
-                            level: node.level,
-                            children: [],
-                            isExpandable: false,
-                            teamChildren: [],
-                            ...directKData
-                        };
-                        return [selfNode, ...(node.teamChildren || [])];
-                    } else {
-                        return node.teamChildren || [];
-                    }
+            const transData = { ...directKData };
+            childrenNodes.forEach((child) => {
+              Object.keys(directKData).forEach((k) => {
+                if (k !== "total" && k !== "category") {
+                  transData[k] = (transData[k] || 0) + (child[k] || 0);
                 }
-                return [node];
+              });
+              transData.total = (transData.total || 0) + (child.total || 0);
+            });
+
+            return {
+              name: mName,
+              level: getMemberLevel(mName, teamLevels, teamPositions, userData),
+              children: childrenNodes,
+              isExpandable: childrenNodes.length > 0,
+              teamChildren: childrenNodes,
+              ...transData,
+            };
+          };
+
+          children = sumRootMembers
+            .map((m) => buildTeamNode(m))
+            .flatMap((node) => {
+              if (cleanForMatch(node.name) === cleanForMatch(userData?.name)) {
+                if (userLevel <= 3) {
+                  const directKData = countsVal.childrenMap[node.name] || {
+                    "0-2": 0,
+                    "2-4": 0,
+                    "4-6": 0,
+                    "6-9": 0,
+                    "9-12": 0,
+                    ">12": 0,
+                    Uncategorized: 0,
+                    total: 0,
+                  };
+                  const selfNode = {
+                    name: node.name,
+                    level: node.level,
+                    children: [],
+                    isExpandable: false,
+                    teamChildren: [],
+                    ...directKData,
+                  };
+                  return [selfNode, ...(node.teamChildren || [])];
+                } else {
+                  return node.teamChildren || [];
+                }
+              }
+              return [node];
             });
         } else {
-            children = Object.entries(countsVal.childrenMap || {}).map(([subKeyName, kData]) => ({
-                name: subKeyName,
-                ...(kData as any)
-            }));
-            
-            if (summarySubGroupBy === 'channel') {
-                const catOrder: Record<string, number> = { 'Distributor': 1, 'R1': 2, 'R2': 3 };
-                children.sort((a, b) => {
-                    const wA = catOrder[a.category] || 99;
-                    const wB = catOrder[b.category] || 99;
-                    if (wA !== wB) return wA - wB;
-                    return b.total - a.total;
-                });
-            } else {
-                children.sort((a, b) => b.total - a.total);
-            }
+          children = Object.entries(countsVal.childrenMap || {}).map(
+            ([subKeyName, kData]) => ({
+              name: subKeyName,
+              ...(kData as any),
+            }),
+          );
+
+          if (summarySubGroupBy === "channel") {
+            const catOrder: Record<string, number> = {
+              Distributor: 1,
+              R1: 2,
+              R2: 3,
+            };
+            children.sort((a, b) => {
+              const wA = catOrder[a.category] || 99;
+              const wB = catOrder[b.category] || 99;
+              if (wA !== wB) return wA - wB;
+              return b.total - a.total;
+            });
+          } else {
+            children.sort((a, b) => b.total - a.total);
+          }
         }
-        
+
         const { childrenMap, ...rest } = countsVal;
         return { name, isExpandable: true, children, ...rest };
-    }).sort((a, b) => b.total - a.total);
-    
-  }, [workingData, kiosks, activeTeamMembers, summaryGroupBy, summarySubGroupBy, userData, summaryFilterCrop, teamSubordinates, teamAreas, teamUpLines, teamPositions, teamLevels]);
+      })
+      .sort((a, b) => b.total - a.total);
+  }, [
+    workingData,
+    kiosks,
+    activeTeamMembers,
+    summaryGroupBy,
+    summarySubGroupBy,
+    userData,
+    summaryFilterCrop,
+    teamSubordinates,
+    teamAreas,
+    teamUpLines,
+    teamPositions,
+    teamLevels,
+  ]);
 
   const filteredSummaryData = useMemo(() => {
-    if (selectedClusters.length === 0) return []; 
-    
-    if (summaryGroupBy === 'subordinate') {
-        const filterNode = (node: any): any => {
-            const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (node[c] || 0), 0);
-            
-            const filteredChildren = (node.children || [])
-                .map((child: any) => {
-                    if (child.isLeaf) {
-                        const leafSelectedTotal = selectedClusters.reduce((sum, c) => sum + (child[c] || 0), 0);
-                        if (leafSelectedTotal > 0) return { ...child, selectedTotal: leafSelectedTotal };
-                        return null;
-                    } else {
-                        return filterNode(child);
-                    }
-                })
-                .filter(Boolean);
+    if (selectedClusters.length === 0) return [];
 
-            // ALWAYS return the teammate node (do not return null if 0 total) to support "tampilkan semua nama" from sheet employee
-            return {
-                ...node,
-                selectedTotal: parentSelectedTotal,
-                children: filteredChildren
-            };
+    if (summaryGroupBy === "subordinate") {
+      const filterNode = (node: any): any => {
+        const parentSelectedTotal = selectedClusters.reduce(
+          (sum, c) => sum + (node[c] || 0),
+          0,
+        );
+
+        const filteredChildren = (node.children || [])
+          .map((child: any) => {
+            if (child.isLeaf) {
+              const leafSelectedTotal = selectedClusters.reduce(
+                (sum, c) => sum + (child[c] || 0),
+                0,
+              );
+              if (leafSelectedTotal > 0)
+                return { ...child, selectedTotal: leafSelectedTotal };
+              return null;
+            } else {
+              return filterNode(child);
+            }
+          })
+          .filter(Boolean);
+
+        // ALWAYS return the teammate node (do not return null if 0 total) to support "tampilkan semua nama" from sheet employee
+        return {
+          ...node,
+          selectedTotal: parentSelectedTotal,
+          children: filteredChildren,
         };
+      };
 
-        // Do not filter(Boolean) here as we want to preserve all employee roots.
-        return summaryData.map(row => filterNode(row));
+      // Do not filter(Boolean) here as we want to preserve all employee roots.
+      return summaryData.map((row) => filterNode(row));
     }
 
     const filterSubordinateNode = (node: any): any => {
-        const nodeSelectedTotal = selectedClusters.reduce((sum, c) => sum + (node[c] || 0), 0);
-        const filteredChildren = (node.children || [])
-            .map((c: any) => filterSubordinateNode(c))
-            .filter(Boolean);
+      const nodeSelectedTotal = selectedClusters.reduce(
+        (sum, c) => sum + (node[c] || 0),
+        0,
+      );
+      const filteredChildren = (node.children || [])
+        .map((c: any) => filterSubordinateNode(c))
+        .filter(Boolean);
 
-        // Hanya tampilkan employee yang berkorelasi saja jika group by bukan 'subordinate' (team)
-        // Karyawan dianggap berkorelasi jika memiliki stock > 0 atau salah satu bawahannya memiliki stock > 0
-        if (summaryGroupBy !== 'subordinate' && nodeSelectedTotal === 0 && filteredChildren.length === 0) {
-            return null;
-        }
+      // Hanya tampilkan employee yang berkorelasi saja jika group by bukan 'subordinate' (team)
+      // Karyawan dianggap berkorelasi jika memiliki stock > 0 atau salah satu bawahannya memiliki stock > 0
+      if (
+        summaryGroupBy !== "subordinate" &&
+        nodeSelectedTotal === 0 &&
+        filteredChildren.length === 0
+      ) {
+        return null;
+      }
 
-        return {
-            ...node,
-            selectedTotal: nodeSelectedTotal,
-            children: filteredChildren
-        };
+      return {
+        ...node,
+        selectedTotal: nodeSelectedTotal,
+        children: filteredChildren,
+      };
     };
 
-    return summaryData.map(row => {
+    return summaryData
+      .map((row) => {
         if (row.isExpandable) {
-            if (summarySubGroupBy === 'subordinate') {
-                const filteredChildren = row.children.map(child => filterSubordinateNode(child)).filter(Boolean);
-                const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
-                if (filteredChildren.length === 0 && parentSelectedTotal === 0) return null;
-                return { ...row, children: filteredChildren, selectedTotal: parentSelectedTotal };
-            }
+          if (summarySubGroupBy === "subordinate") {
+            const filteredChildren = row.children
+              .map((child) => filterSubordinateNode(child))
+              .filter(Boolean);
+            const parentSelectedTotal = selectedClusters.reduce(
+              (sum, c) => sum + (row[c] || 0),
+              0,
+            );
+            if (filteredChildren.length === 0 && parentSelectedTotal === 0)
+              return null;
+            return {
+              ...row,
+              children: filteredChildren,
+              selectedTotal: parentSelectedTotal,
+            };
+          }
 
-            const filteredChildren = row.children.map(child => {
-                const childSelectedTotal = selectedClusters.reduce((sum, c) => sum + (child[c] || 0), 0);
-                // If sub-group is Team/Subordinate, ALWAYS show them even with 0 total
-                if (summarySubGroupBy === 'subordinate' || childSelectedTotal > 0) {
-                    return { ...child, selectedTotal: childSelectedTotal };
-                }
-                return null;
-            }).filter(Boolean);
+          const filteredChildren = row.children
+            .map((child) => {
+              const childSelectedTotal = selectedClusters.reduce(
+                (sum, c) => sum + (child[c] || 0),
+                0,
+              );
+              // If sub-group is Team/Subordinate, ALWAYS show them even with 0 total
+              if (
+                summarySubGroupBy === "subordinate" ||
+                childSelectedTotal > 0
+              ) {
+                return { ...child, selectedTotal: childSelectedTotal };
+              }
+              return null;
+            })
+            .filter(Boolean);
 
-            const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
-            // If sub-group is Team/Subordinate, ALWAYS show the parent group even with 0 total
-            if (summarySubGroupBy === 'subordinate' || filteredChildren.length > 0 || parentSelectedTotal > 0) {
-                return { ...row, children: filteredChildren, selectedTotal: parentSelectedTotal };
-            }
-            return null;
+          const parentSelectedTotal = selectedClusters.reduce(
+            (sum, c) => sum + (row[c] || 0),
+            0,
+          );
+          // If sub-group is Team/Subordinate, ALWAYS show the parent group even with 0 total
+          if (
+            summarySubGroupBy === "subordinate" ||
+            filteredChildren.length > 0 ||
+            parentSelectedTotal > 0
+          ) {
+            return {
+              ...row,
+              children: filteredChildren,
+              selectedTotal: parentSelectedTotal,
+            };
+          }
+          return null;
         } else {
-            const rowSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
-            if (rowSelectedTotal > 0) return { ...row, selectedTotal: rowSelectedTotal };
-            return null;
+          const rowSelectedTotal = selectedClusters.reduce(
+            (sum, c) => sum + (row[c] || 0),
+            0,
+          );
+          if (rowSelectedTotal > 0)
+            return { ...row, selectedTotal: rowSelectedTotal };
+          return null;
         }
-    }).filter(Boolean);
+      })
+      .filter(Boolean);
   }, [summaryData, selectedClusters, summaryGroupBy, summarySubGroupBy]);
 
   const totalSummary = useMemo(() => {
-    const totals = { '0-2': 0, '2-4': 0, '4-6': 0, '6-9': 0, '9-12': 0, '>12': 0, 'Uncategorized': 0, selectedTotal: 0 };
-    filteredSummaryData.forEach(row => {
-      selectedClusters.forEach(c => { totals[c] += row[c] || 0; });
+    const totals = {
+      "0-2": 0,
+      "2-4": 0,
+      "4-6": 0,
+      "6-9": 0,
+      "9-12": 0,
+      ">12": 0,
+      Uncategorized: 0,
+      selectedTotal: 0,
+    };
+    filteredSummaryData.forEach((row) => {
+      selectedClusters.forEach((c) => {
+        totals[c] += row[c] || 0;
+      });
       totals.selectedTotal += row.selectedTotal || 0;
     });
     return totals;
   }, [filteredSummaryData, selectedClusters]);
 
   const handleDownloadSummaryExcel = () => {
-    const teamMembersCleanSet = new Set(activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean));
-    const nonLeafTeamMembersClean = activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean);
+    const teamMembersCleanSet = new Set(
+      activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
+    );
+    const nonLeafTeamMembersClean = activeTeamMembers
+      .map((m) => cleanForMatch(m))
+      .filter(Boolean);
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
     // Filter enriched data to match team members and active crop + month + chosen aging clusters
-    const displayedRawItems = (enrichedSummaryDataRef.current || []).filter(item => {
-      const picClean = cleanForMatch(item.pic);
-      const isTeamMember = teamMembersCleanSet.has(picClean) || nonLeafTeamMembersClean.some(m => picClean.includes(m));
-      const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
-      const isClusterMatch = selectedClusters.includes(item.cluster);
+    const displayedRawItems = (enrichedSummaryDataRef.current || []).filter(
+      (item) => {
+        const picClean = cleanForMatch(item.pic);
+        const isTeamMember =
+          teamMembersCleanSet.has(picClean) ||
+          nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+        const isCropMatch = checkCropMatch(item.crops, summaryFilterCrop);
+        const isClusterMatch = selectedClusters.includes(item.cluster);
 
-      return isTeamMember && isCropMatch && isClusterMatch;
-    });
+        return isTeamMember && isCropMatch && isClusterMatch;
+      },
+    );
 
     if (displayedRawItems.length === 0) {
       alert("Tidak ada data untuk di-download.");
@@ -4307,21 +6063,29 @@ const Dashboard = ({
     }
 
     // Map each item exactly to match the custom requested headers in Indonesian and English
-    const formattedRows = displayedRawItems.map(item => {
+    const formattedRows = displayedRawItems.map((item) => {
       return {
-        'tgl': item.timestamp || '',
-        'province': item.province || getFromRecord<string>(teamProvinces, item.pic) || '-',
-        'crops': item.crops || '',
-        'checker': item.user || item.pic || '',
-        'channel': item.kiosk || '',
-        'category': item.category || '',
-        'hybrids': item.hybrid || '',
-        'lot no': item.lot || '',
-        'qty': Number(item.stock) || 0,
-        'usia stock': item.aging !== undefined ? String(item.aging) : '',
-        'cluster aging': item.cluster || '',
-        'shipping date': item.drDate || item.shipping_date || item.shippingDate || item.dr_date || '',
-        'exp date': item.expired || ''
+        tgl: item.timestamp || "",
+        province:
+          item.province ||
+          getFromRecord<string>(teamProvinces, item.pic) ||
+          "-",
+        crops: item.crops || "",
+        checker: item.user || item.pic || "",
+        channel: item.kiosk || "",
+        category: item.category || "",
+        hybrids: item.hybrid || "",
+        "lot no": item.lot || "",
+        qty: Number(item.stock) || 0,
+        "usia stock": item.aging !== undefined ? String(item.aging) : "",
+        "cluster aging": item.cluster || "",
+        "shipping date":
+          item.drDate ||
+          item.shipping_date ||
+          item.shippingDate ||
+          item.dr_date ||
+          "",
+        "exp date": item.expired || "",
       };
     });
 
@@ -4343,16 +6107,27 @@ const Dashboard = ({
       { wch: 18 }, // usia stock
       { wch: 15 }, // cluster aging
       { wch: 20 }, // shipping date
-      { wch: 22 }  // exp date
+      { wch: 22 }, // exp date
     ];
-    worksheet['!cols'] = colWidths;
+    worksheet["!cols"] = colWidths;
 
-    XLSX.writeFile(workbook, `Stock_RADAR_AWBA_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(
+      workbook,
+      `Stock_RADAR_AWBA_${new Date().toISOString().split("T")[0]}.xlsx`,
+    );
   };
 
-   const totalPog = useMemo(() => {
-    const total = { lastQty: 0, currentQty: 0, sellIn: 0, sellOut: 0, totalInv: 0, pog: 0, idleStock: 0 };
-    aggregatedPogData.forEach(row => {
+  const totalPog = useMemo(() => {
+    const total = {
+      lastQty: 0,
+      currentQty: 0,
+      sellIn: 0,
+      sellOut: 0,
+      totalInv: 0,
+      pog: 0,
+      idleStock: 0,
+    };
+    aggregatedPogData.forEach((row) => {
       total.lastQty += row.lastQty || 0;
       total.currentQty += row.currentQty || 0;
       total.sellIn += row.sellIn || 0;
@@ -4367,16 +6142,20 @@ const Dashboard = ({
   const totalTeamStats = useMemo(() => {
     let total = 0;
     let visited = 0;
-    teamStats.forEach(s => {
+    teamStats.forEach((s) => {
       total += s.total || 0;
       visited += s.totalVisited || 0;
     });
-    const percentage = total > 0 ? Math.min(100, Math.round((visited / total) * 100)) : 0;
+    const percentage =
+      total > 0 ? Math.min(100, Math.round((visited / total) * 100)) : 0;
     return { visited, total, percentage };
   }, [teamStats]);
 
   const activeVisitStats = useMemo(() => {
-    const isAll = !mappingPic || cleanForMatch(mappingPic) === 'allteam' || cleanForMatch(mappingPic) === 'all_team';
+    const isAll =
+      !mappingPic ||
+      cleanForMatch(mappingPic) === "allteam" ||
+      cleanForMatch(mappingPic) === "all_team";
     if (isAll) {
       return totalTeamStats;
     }
@@ -4384,67 +6163,78 @@ const Dashboard = ({
     return {
       visited: picStat.visited,
       total: picStat.total,
-      percentage: picStat.percentage
+      percentage: picStat.percentage,
     };
   }, [mappingPic, totalTeamStats, teamStats]);
 
   const categoryFillingStats = useMemo(() => {
     let total = 0;
     let filled = 0;
-    
-    mappedChannelsByPic.forEach(k => {
+
+    mappedChannelsByPic.forEach((k) => {
       total++;
-      const cat = String(k.category || '').trim();
+      const cat = String(k.category || "").trim();
       const cleanCat = cat.toLowerCase();
-      if (cat !== '' && cat !== '-' && cleanCat !== 'uncategorized' && cleanCat !== 'n/a' && cleanCat !== 'unknown') {
+      if (
+        cat !== "" &&
+        cat !== "-" &&
+        cleanCat !== "uncategorized" &&
+        cleanCat !== "n/a" &&
+        cleanCat !== "unknown"
+      ) {
         filled++;
       }
     });
 
-    const percentage = total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
+    const percentage =
+      total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0;
     return { filled, total, percentage };
   }, [mappedChannelsByPic]);
 
   const categoryDistributionStats = useMemo(() => {
     const counts: Record<string, number> = {};
     let total = 0;
-    
-    mappedChannelsByPic.forEach(k => {
+
+    mappedChannelsByPic.forEach((k) => {
       total++;
-      let cat = String(k.category || '').trim();
-      if (cat === '' || cat === '-') {
-        cat = 'Uncategorized';
+      let cat = String(k.category || "").trim();
+      if (cat === "" || cat === "-") {
+        cat = "Uncategorized";
       }
-      
+
       const lowerCat = cat.toLowerCase();
-      if (lowerCat === 'uncategorized' || lowerCat === 'n/a' || lowerCat === 'unknown') {
-        cat = 'Uncategorized';
-      } else if (lowerCat === 'r1') {
-        cat = 'R1';
-      } else if (lowerCat === 'r2') {
-        cat = 'R2';
-      } else if (lowerCat === 'distributor') {
-        cat = 'Distributor';
+      if (
+        lowerCat === "uncategorized" ||
+        lowerCat === "n/a" ||
+        lowerCat === "unknown"
+      ) {
+        cat = "Uncategorized";
+      } else if (lowerCat === "r1") {
+        cat = "R1";
+      } else if (lowerCat === "r2") {
+        cat = "R2";
+      } else if (lowerCat === "distributor") {
+        cat = "Distributor";
       } else {
         cat = cat.charAt(0).toUpperCase() + cat.slice(1);
       }
-      
+
       counts[cat] = (counts[cat] || 0) + 1;
     });
 
     const data = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => {
-        const order = ['distributor', 'r1', 'r2'];
+        const order = ["distributor", "r1", "r2"];
         const idxA = order.indexOf(a.name.toLowerCase());
         const idxB = order.indexOf(b.name.toLowerCase());
-        
+
         if (idxA !== -1 && idxB !== -1) {
           return idxA - idxB;
         }
         if (idxA !== -1) return -1;
         if (idxB !== -1) return 1;
-        
+
         return b.value - a.value;
       });
 
@@ -4454,26 +6244,33 @@ const Dashboard = ({
   const categoryChartSegments = useMemo(() => {
     const { data, total } = categoryDistributionStats;
     if (total === 0 || data.length === 0) return [];
-    
+
     let accumulatedPercent = 0;
     const circumference = 2 * Math.PI * 95; // 596.9026
-    
+
     const getCategoryColor = (name: string, idx: number) => {
       const lower = name.toLowerCase();
-      if (lower === 'gold') return '#f59e0b'; // Gold Amber-500
-      if (lower === 'silver') return '#cbd5e1'; // Silver Slate-300
-      if (lower === 'bronze') return '#b45309'; // Bronze Amber-700
-      
+      if (lower === "gold") return "#f59e0b"; // Gold Amber-500
+      if (lower === "silver") return "#cbd5e1"; // Silver Slate-300
+      if (lower === "bronze") return "#b45309"; // Bronze Amber-700
+
       // Primary partner categories
-      if (lower === 'distributor') return 'rgba(255, 255, 255, 0.35)'; // White with lower opacity
-      if (lower === 'r1') return '#ffffff'; // White
-      if (lower === 'r2') return '#2563eb'; // Blue cluster color (blue-600)
-      
-      if (lower === 'uncategorized' || lower === 'unknown' || lower === '-') return '#94a3b8'; // Neutral Slate
-      
+      if (lower === "distributor") return "rgba(255, 255, 255, 0.35)"; // White with lower opacity
+      if (lower === "r1") return "#ffffff"; // White
+      if (lower === "r2") return "#2563eb"; // Blue cluster color (blue-600)
+
+      if (lower === "uncategorized" || lower === "unknown" || lower === "-")
+        return "#94a3b8"; // Neutral Slate
+
       const COLORS = [
-        'rgba(255, 255, 255, 0.35)', '#ffffff', '#2563eb', '#f59e0b', 
-        '#fb923c', '#f43f5e', '#2dd4bf', '#94a3b8'
+        "rgba(255, 255, 255, 0.35)",
+        "#ffffff",
+        "#2563eb",
+        "#f59e0b",
+        "#fb923c",
+        "#f43f5e",
+        "#2dd4bf",
+        "#94a3b8",
       ];
       return COLORS[idx % COLORS.length];
     };
@@ -4481,14 +6278,15 @@ const Dashboard = ({
     return data.map((item, idx) => {
       const percentage = total > 0 ? (item.value / total) * 100 : 0;
       const strokeLength = (percentage / 100) * circumference;
-      const strokeOffset = circumference - (accumulatedPercent / 100) * circumference;
+      const strokeOffset =
+        circumference - (accumulatedPercent / 100) * circumference;
       accumulatedPercent += percentage;
       return {
         ...item,
         percentage,
         strokeDasharray: `${strokeLength} ${circumference - strokeLength}`,
         strokeDashoffset: strokeOffset,
-        color: getCategoryColor(item.name, idx)
+        color: getCategoryColor(item.name, idx),
       };
     });
   }, [categoryDistributionStats]);
@@ -4496,20 +6294,23 @@ const Dashboard = ({
   const renderRecursiveSummaryRow = (row: any, depth = 0): React.ReactNode => {
     const hasChildren = row.children && row.children.length > 0;
     const isExpanded = !!expandedRows[row.name];
-    
+
     // Determine level badge style
     const levelVal = row.level;
-    const levelLabel = levelVal !== undefined ? `Level ${levelVal}` : '';
+    const levelLabel = levelVal !== undefined ? `Level ${levelVal}` : "";
     const isZeroTotal = row.selectedTotal === 0;
 
     return (
-      <div key={row.name} className={`overflow-hidden transition-all ${isZeroTotal ? 'bg-red-50/40 border-l-[3px] border-red-300' : ''} ${depth === 0 ? 'md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]' : ''}`}>
-        <div 
-          className={`flex justify-between items-center px-5 py-4 pb-2 transition-colors duration-150 animate-in fade-in slide-in-from-left-2 duration-200 ${isZeroTotal ? 'hover:bg-red-100/40' : 'hover:bg-slate-50/60'}`}
+      <div
+        key={row.name}
+        className={`overflow-hidden transition-all ${isZeroTotal ? "bg-red-50/40 border-l-[3px] border-red-300" : ""} ${depth === 0 ? "md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]" : ""}`}
+      >
+        <div
+          className={`flex justify-between items-center px-5 py-4 pb-2 transition-colors duration-150 animate-in fade-in slide-in-from-left-2 duration-200 ${isZeroTotal ? "hover:bg-red-100/40" : "hover:bg-slate-50/60"}`}
           style={{ paddingLeft: `${Math.max(20, depth * 20)}px` }}
         >
           <div className="flex flex-col min-w-0 flex-1 pr-2">
-            <span 
+            <span
               className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5 cursor-pointer select-none"
               onClick={() => {
                 if (hasChildren) {
@@ -4518,42 +6319,90 @@ const Dashboard = ({
               }}
             >
               {hasChildren && (
-                <span className={`material-symbols-outlined text-[20px] shrink-0 ${isZeroTotal ? 'text-red-500' : 'text-primary'}`}>
-                  {isExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
+                <span
+                  className={`material-symbols-outlined text-[20px] shrink-0 ${isZeroTotal ? "text-red-500" : "text-primary"}`}
+                >
+                  {isExpanded ? "keyboard_arrow_down" : "keyboard_arrow_right"}
                 </span>
               )}
-              <span className="truncate">{renderMaybeChannelName(row.name)}</span>
+              <span className="truncate">
+                {renderMaybeChannelName(row.name)}
+              </span>
               {isZeroTotal && (
-                <span className="text-[7.5px] font-extrabold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider">No Activity</span>
+                <span className="text-[7.5px] font-extrabold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider">
+                  No Activity
+                </span>
               )}
-              {row.isLeaf && summarySubGroupBy === 'channel' && row.category && (
-                <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">{row.category}</span>
-              )}
+              {row.isLeaf &&
+                summarySubGroupBy === "channel" &&
+                row.category && (
+                  <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+                    {row.category}
+                  </span>
+                )}
             </span>
-            {(!row.isLeaf && getStatsForPic(row.name)) && (
-                <div className="flex gap-1.5 mt-1 ml-6 text-[8.5px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">V: <span className="text-primary">{getStatsForPic(row.name)?.visited}</span></span>
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">C: <span className="text-[#181a2c]">{getStatsForPic(row.name)?.total}</span></span>
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">%: <span className="text-emerald-600">{getStatsForPic(row.name)?.percentage}%</span></span>
-                </div>
+            {!row.isLeaf && getStatsForPic(row.name) && (
+              <div className="flex gap-1.5 mt-1 ml-6 text-[8.5px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                  V:{" "}
+                  <span className="text-primary">
+                    {getStatsForPic(row.name)?.visited}
+                  </span>
+                </span>
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                  C:{" "}
+                  <span className="text-[#181a2c]">
+                    {getStatsForPic(row.name)?.total}
+                  </span>
+                </span>
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                  %:{" "}
+                  <span className="text-emerald-600">
+                    {getStatsForPic(row.name)?.percentage}%
+                  </span>
+                </span>
+              </div>
             )}
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className={`font-bold text-sm ${isZeroTotal ? 'text-red-600' : 'text-primary'}`}>{formatNum(row.selectedTotal)}</span>
-            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">Total Kg</span>
+            <span
+              className={`font-bold text-sm ${isZeroTotal ? "text-red-600" : "text-primary"}`}
+            >
+              {formatNum(row.selectedTotal)}
+            </span>
+            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">
+              Total Kg
+            </span>
           </div>
         </div>
 
         {/* Value Clusters in primary container */}
-        <div className={`mx-5 mb-3 mt-2 flex divide-x rounded-[14px] overflow-hidden ${isZeroTotal ? 'divide-red-200 bg-red-300 shadow-[0_12px_32px_rgba(239,68,68,0.18)]' : 'divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)]'}`}
-             style={{ marginLeft: `${Math.max(20, depth * 20)}px` }}>
-          {selectedClusters.map(clusterKey => {
-            if (clusterKey === 'Uncategorized' && (!row[clusterKey] || row[clusterKey] === 0)) return null;
-            const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+        <div
+          className={`mx-5 mb-3 mt-2 flex divide-x rounded-[14px] overflow-hidden ${isZeroTotal ? "divide-red-200 bg-red-300 shadow-[0_12px_32px_rgba(239,68,68,0.18)]" : "divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)]"}`}
+          style={{ marginLeft: `${Math.max(20, depth * 20)}px` }}
+        >
+          {selectedClusters.map((clusterKey) => {
+            if (
+              clusterKey === "Uncategorized" &&
+              (!row[clusterKey] || row[clusterKey] === 0)
+            )
+              return null;
+            const clusterConfig = CLUSTER_CONFIG.find(
+              (c) => c.key === clusterKey,
+            );
             return (
-              <div key={clusterKey} className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroTotal ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-                <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroTotal ? 'text-white/80' : 'text-white/85'}`}>{clusterConfig?.label || clusterKey}</span>
-                <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row[clusterKey])}</span>
+              <div
+                key={clusterKey}
+                className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroTotal ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+              >
+                <span
+                  className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroTotal ? "text-white/80" : "text-white/85"}`}
+                >
+                  {clusterConfig?.label || clusterKey}
+                </span>
+                <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                  {formatNum(row[clusterKey])}
+                </span>
               </div>
             );
           })}
@@ -4561,229 +6410,399 @@ const Dashboard = ({
 
         {isExpanded && hasChildren && (
           <div className="pb-2 border-t border-[#edecff] bg-slate-50/15">
-            {row.children.map((child: any) => renderRecursiveSummaryRow(child, depth + 1))}
+            {row.children.map((child: any) =>
+              renderRecursiveSummaryRow(child, depth + 1),
+            )}
           </div>
         )}
       </div>
     );
   };
 
-  const renderRecursiveSubordinate = (child: any, depth = 0): React.ReactNode => {
+  const renderRecursiveSubordinate = (
+    child: any,
+    depth = 0,
+  ): React.ReactNode => {
     const isChildZeroTeam = child.selectedTotal === 0;
     const hasSubChildren = child.children && child.children.length > 0;
     const isSubExpanded = !!expandedRows[child.name];
-    
+
     return (
-        <div key={child.name} className="flex flex-col w-full animate-in fade-in slide-in-from-left-2 duration-200" style={{ paddingLeft: depth > 0 ? '16px' : '0px' }}>
-            <div className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 mb-2 ${
-                isChildZeroTeam 
-                    ? 'bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]' 
-                    : 'bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]'
-            }`}>
-                <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
-                    <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5">
-                            {hasSubChildren && (
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleRow(child.name);
-                                    }}
-                                    className="focus:outline-none flex items-center justify-center p-0.5 hover:bg-slate-200/50 rounded-full"
-                                >
-                                    <span className="material-symbols-outlined text-primary text-[16px]">
-                                        {isSubExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
-                                    </span>
-                                </button>
-                            )}
-                            <span className="font-bold text-[11px] text-[#181a2c] uppercase flex items-center gap-1.5 flex-wrap">
-                                <span className="truncate">{renderMaybeChannelName(child.name)}</span>
-                                {isChildZeroTeam && (
-                                    <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider animate-pulse font-bold">No Activity</span>
-                                )}
-                            </span>
-                        </div>
-                        {getStatsForPic(child.name) && (
-                            <div className="flex gap-1.2 mt-1 ml-5 text-[8px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">V: <span className="text-primary">{getStatsForPic(child.name)?.visited}</span></span>
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">C: <span className="text-[#181a2c]">{getStatsForPic(child.name)?.total}</span></span>
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">%: <span className="text-emerald-600">{getStatsForPic(child.name)?.percentage}%</span></span>
-                            </div>
-                        )}
-                    </div>
-                    <span className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? 'text-red-600' : 'text-[#181a2c]'}`}>{formatNum(child.selectedTotal)} <span className="text-[8.5px] text-[#8E94B7]">Kg</span></span>
+      <div
+        key={child.name}
+        className="flex flex-col w-full animate-in fade-in slide-in-from-left-2 duration-200"
+        style={{ paddingLeft: depth > 0 ? "16px" : "0px" }}
+      >
+        <div
+          className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 mb-2 ${
+            isChildZeroTeam
+              ? "bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]"
+              : "bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]"
+          }`}
+        >
+          <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                {hasSubChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRow(child.name);
+                    }}
+                    className="focus:outline-none flex items-center justify-center p-0.5 hover:bg-slate-200/50 rounded-full"
+                  >
+                    <span className="material-symbols-outlined text-primary text-[16px]">
+                      {isSubExpanded
+                        ? "keyboard_arrow_down"
+                        : "keyboard_arrow_right"}
+                    </span>
+                  </button>
+                )}
+                <span className="font-bold text-[11px] text-[#181a2c] uppercase flex items-center gap-1.5 flex-wrap">
+                  <span className="truncate">
+                    {renderMaybeChannelName(child.name)}
+                  </span>
+                  {isChildZeroTeam && (
+                    <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider animate-pulse font-bold">
+                      No Activity
+                    </span>
+                  )}
+                </span>
+              </div>
+              {getStatsForPic(child.name) && (
+                <div className="flex gap-1.2 mt-1 ml-5 text-[8px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    V:{" "}
+                    <span className="text-primary">
+                      {getStatsForPic(child.name)?.visited}
+                    </span>
+                  </span>
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    C:{" "}
+                    <span className="text-[#181a2c]">
+                      {getStatsForPic(child.name)?.total}
+                    </span>
+                  </span>
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    %:{" "}
+                    <span className="text-emerald-600">
+                      {getStatsForPic(child.name)?.percentage}%
+                    </span>
+                  </span>
                 </div>
-                <div className={`flex w-full divide-x rounded-[14px] overflow-hidden ${
-                    isChildZeroTeam 
-                        ? 'divide-red-200 bg-red-100/40' 
-                        : 'divide-primary/10 bg-primary/8'
-                }`}>
-                    {selectedClusters.map(clusterKey => {
-                        if (clusterKey === 'Uncategorized' && (!child[clusterKey] || child[clusterKey] === 0)) return null;
-                        const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
-                        return (
-                            <div key={clusterKey} className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                isChildZeroTeam ? 'hover:bg-red-100/30' : 'hover:bg-primary/5'
-                            }`}>
-                                <span className={`text-[7px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isChildZeroTeam ? 'text-red-700/80' : 'text-[#8E94B7]'}`}>{clusterConfig?.label || clusterKey}</span>
-                                <span className={`font-semibold text-[9.5px] truncate w-full ${isChildZeroTeam ? 'text-red-600' : 'text-[#181a2c]'}`}>{formatNum(child[clusterKey])}</span>
-                            </div>
-                        );
-                    })}
-                </div>
+              )}
             </div>
-            
-            {isSubExpanded && hasSubChildren && (
-                <div className="flex flex-col border-l border-[#edecff] ml-3 pl-1 gap-1 mb-2">
-                    {child.children.map((subChild: any) => renderRecursiveSubordinate(subChild, depth + 1))}
+            <span
+              className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? "text-red-600" : "text-[#181a2c]"}`}
+            >
+              {formatNum(child.selectedTotal)}{" "}
+              <span className="text-[8.5px] text-[#8E94B7]">Kg</span>
+            </span>
+          </div>
+          <div
+            className={`flex w-full divide-x rounded-[14px] overflow-hidden ${
+              isChildZeroTeam
+                ? "divide-red-200 bg-red-100/40"
+                : "divide-primary/10 bg-primary/8"
+            }`}
+          >
+            {selectedClusters.map((clusterKey) => {
+              if (
+                clusterKey === "Uncategorized" &&
+                (!child[clusterKey] || child[clusterKey] === 0)
+              )
+                return null;
+              const clusterConfig = CLUSTER_CONFIG.find(
+                (c) => c.key === clusterKey,
+              );
+              return (
+                <div
+                  key={clusterKey}
+                  className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                    isChildZeroTeam
+                      ? "hover:bg-red-100/30"
+                      : "hover:bg-primary/5"
+                  }`}
+                >
+                  <span
+                    className={`text-[7px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isChildZeroTeam ? "text-red-700/80" : "text-[#8E94B7]"}`}
+                  >
+                    {clusterConfig?.label || clusterKey}
+                  </span>
+                  <span
+                    className={`font-semibold text-[9.5px] truncate w-full ${isChildZeroTeam ? "text-red-600" : "text-[#181a2c]"}`}
+                  >
+                    {formatNum(child[clusterKey])}
+                  </span>
                 </div>
-            )}
+              );
+            })}
+          </div>
         </div>
+
+        {isSubExpanded && hasSubChildren && (
+          <div className="flex flex-col border-l border-[#edecff] ml-3 pl-1 gap-1 mb-2">
+            {child.children.map((subChild: any) =>
+              renderRecursiveSubordinate(subChild, depth + 1),
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
-  const renderRecursivePogSubordinate = (child: any, depth = 0): React.ReactNode => {
-    const isChildZeroTeam = child.lastQty === 0 && child.sellIn === 0 && child.sellOut === 0 && child.totalInv === 0 && child.currentQty === 0;
+  const renderRecursivePogSubordinate = (
+    child: any,
+    depth = 0,
+  ): React.ReactNode => {
+    const isChildZeroTeam =
+      child.lastQty === 0 &&
+      child.sellIn === 0 &&
+      child.sellOut === 0 &&
+      child.totalInv === 0 &&
+      child.currentQty === 0;
     const hasSubChildren = child.children && child.children.length > 0;
     const isSubExpanded = !!pogExpandedRows[child.name];
-    
-    return (
-        <div key={child.name} className="flex flex-col w-full animate-in fade-in slide-in-from-left-2 duration-200" style={{ paddingLeft: depth > 0 ? '16px' : '0px' }}>
-            <div className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 mb-2 ${
-                isChildZeroTeam 
-                    ? 'bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]' 
-                    : 'bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]'
-            }`}>
-                <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
-                    <div className="flex flex-col min-w-0">
-                        <div className="flex items-center gap-1.5">
-                            {hasSubChildren && (
-                                <button 
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        togglePogRow(child.name);
-                                    }}
-                                    className="focus:outline-none flex items-center justify-center p-0.5 hover:bg-slate-200/50 rounded-full"
-                                >
-                                    <span className="material-symbols-outlined text-primary text-[16px]">
-                                        {isSubExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
-                                    </span>
-                                </button>
-                            )}
-                            <span className="font-bold text-[11px] text-[#181a2c] uppercase flex items-center gap-1.5 flex-wrap">
-                                <span className="truncate">{renderMaybeChannelName(child.name)}</span>
-                                {isChildZeroTeam && (
-                                    <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">No Activity</span>
-                                )}
-                            </span>
-                        </div>
-                        {getStatsForPic(child.name) && (
-                            <div className="flex gap-1.2 mt-1 ml-5 text-[8px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">V: <span className="text-primary">{getStatsForPic(child.name)?.visited}</span></span>
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">C: <span className="text-[#181a2c]">{getStatsForPic(child.name)?.total}</span></span>
-                              <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">%: <span className="text-emerald-600">{getStatsForPic(child.name)?.percentage}%</span></span>
-                            </div>
-                        )}
-                    </div>
-                    <span className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? 'text-red-600' : 'text-primary'}`}>
-                        {formatNum(child.pog)} <span className="text-[8.5px] text-[#8E94B7]">POG</span>
-                    </span>
-                </div>
-                <div className="flex flex-row w-full gap-1.5 md:gap-2">
-                    {/* Table 1: Opening Inv & End of Inv */}
-                    <div className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
-                        isChildZeroTeam 
-                            ? 'divide-red-200 bg-red-100/40' 
-                            : 'divide-primary/10 bg-primary/5'
-                    }`}>
-                        <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                          isChildZeroTeam ? 'hover:bg-red-200/30' : 'hover:bg-primary/5'
-                        }`}>
-                          <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                            isChildZeroTeam ? 'text-red-700/60' : 'text-[#8E94B7]'
-                          }`}>Opening Inv</span>
-                          <span className={`font-black text-[10px] truncate w-full ${
-                            isChildZeroTeam ? 'text-red-700' : 'text-[#181a2c]'
-                          }`}>{formatNum(child.lastQty)}</span>
-                        </div>
-                        <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                          isChildZeroTeam ? 'hover:bg-red-200/30' : 'hover:bg-primary/5'
-                        }`}>
-                          <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                            isChildZeroTeam ? 'text-red-700/60' : 'text-[#1d4ed8]/75'
-                          }`}>End of Inv</span>
-                          <span className={`font-black text-[10px] truncate w-full ${
-                            isChildZeroTeam ? 'text-red-700' : 'text-[#1d4ed8]'
-                          }`}>{formatNum(child.currentQty)}</span>
-                        </div>
-                    </div>
 
-                    {/* Table 2: Stock in, idle stock, POG */}
-                    <div className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
-                      isChildZeroTeam 
-                        ? 'divide-red-200 bg-red-200/45' 
-                        : 'divide-primary/10 bg-primary/10 border border-primary/10'
-                    }`}>
-                        <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                          isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-primary/15'
-                        }`}>
-                          <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                            isChildZeroTeam ? 'text-red-800/70' : 'text-[#154be2]/80'
-                          }`}>Stock in</span>
-                          <span className={`font-black text-[10px] truncate w-full ${
-                            isChildZeroTeam ? 'text-red-800' : 'text-[#154be2]'
-                          }`}>{formatNum(child.sellIn)}</span>
-                        </div>
-                        <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                          isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-amber-100/60'
-                        }`}>
-                          <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                            isChildZeroTeam ? 'text-red-800/70' : 'text-amber-800'
-                          }`}>idle stock</span>
-                          <span className={`font-black text-[10px] truncate w-full ${
-                            isChildZeroTeam ? 'text-red-800' : 'text-amber-700'
-                          }`}>{formatNum(child.idleStock)}</span>
-                        </div>
-                        <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                          isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-emerald-100/60'
-                        }`}>
-                          <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                            isChildZeroTeam ? 'text-red-800/70' : 'text-emerald-800'
-                          }`}>POG</span>
-                          <span className={`font-black text-[10px] truncate w-full ${
-                            isChildZeroTeam ? 'text-red-800' : 'text-emerald-700 font-extrabold'
-                          }`}>{formatNum(child.pog)}</span>
-                        </div>
-                    </div>
+    return (
+      <div
+        key={child.name}
+        className="flex flex-col w-full animate-in fade-in slide-in-from-left-2 duration-200"
+        style={{ paddingLeft: depth > 0 ? "16px" : "0px" }}
+      >
+        <div
+          className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 mb-2 ${
+            isChildZeroTeam
+              ? "bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]"
+              : "bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]"
+          }`}
+        >
+          <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5">
+                {hasSubChildren && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePogRow(child.name);
+                    }}
+                    className="focus:outline-none flex items-center justify-center p-0.5 hover:bg-slate-200/50 rounded-full"
+                  >
+                    <span className="material-symbols-outlined text-primary text-[16px]">
+                      {isSubExpanded
+                        ? "keyboard_arrow_down"
+                        : "keyboard_arrow_right"}
+                    </span>
+                  </button>
+                )}
+                <span className="font-bold text-[11px] text-[#181a2c] uppercase flex items-center gap-1.5 flex-wrap">
+                  <span className="truncate">
+                    {renderMaybeChannelName(child.name)}
+                  </span>
+                  {isChildZeroTeam && (
+                    <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                      No Activity
+                    </span>
+                  )}
+                </span>
+              </div>
+              {getStatsForPic(child.name) && (
+                <div className="flex gap-1.2 mt-1 ml-5 text-[8px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    V:{" "}
+                    <span className="text-primary">
+                      {getStatsForPic(child.name)?.visited}
+                    </span>
+                  </span>
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    C:{" "}
+                    <span className="text-[#181a2c]">
+                      {getStatsForPic(child.name)?.total}
+                    </span>
+                  </span>
+                  <span className="bg-[#f4f2ff] px-1.5 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                    %:{" "}
+                    <span className="text-emerald-600">
+                      {getStatsForPic(child.name)?.percentage}%
+                    </span>
+                  </span>
                 </div>
+              )}
             </div>
-            
-            {isSubExpanded && hasSubChildren && (
-                <div className="flex flex-col border-l border-[#edecff] ml-3 pl-1 gap-1 mb-2">
-                    {child.children.map((subChild: any) => renderRecursivePogSubordinate(subChild, depth + 1))}
-                </div>
-            )}
+            <span
+              className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? "text-red-600" : "text-primary"}`}
+            >
+              {formatNum(child.pog)}{" "}
+              <span className="text-[8.5px] text-[#8E94B7]">POG</span>
+            </span>
+          </div>
+          <div className="flex flex-row w-full gap-1.5 md:gap-2">
+            {/* Table 1: Opening Inv & End of Inv */}
+            <div
+              className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
+                isChildZeroTeam
+                  ? "divide-red-200 bg-red-100/40"
+                  : "divide-primary/10 bg-primary/5"
+              }`}
+            >
+              <div
+                className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                  isChildZeroTeam ? "hover:bg-red-200/30" : "hover:bg-primary/5"
+                }`}
+              >
+                <span
+                  className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                    isChildZeroTeam ? "text-red-700/60" : "text-[#8E94B7]"
+                  }`}
+                >
+                  Opening Inv
+                </span>
+                <span
+                  className={`font-black text-[10px] truncate w-full ${
+                    isChildZeroTeam ? "text-red-700" : "text-[#181a2c]"
+                  }`}
+                >
+                  {formatNum(child.lastQty)}
+                </span>
+              </div>
+              <div
+                className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                  isChildZeroTeam ? "hover:bg-red-200/30" : "hover:bg-primary/5"
+                }`}
+              >
+                <span
+                  className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                    isChildZeroTeam ? "text-red-700/60" : "text-[#1d4ed8]/75"
+                  }`}
+                >
+                  End of Inv
+                </span>
+                <span
+                  className={`font-black text-[10px] truncate w-full ${
+                    isChildZeroTeam ? "text-red-700" : "text-[#1d4ed8]"
+                  }`}
+                >
+                  {formatNum(child.currentQty)}
+                </span>
+              </div>
+            </div>
+
+            {/* Table 2: Stock in, idle stock, POG */}
+            <div
+              className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
+                isChildZeroTeam
+                  ? "divide-red-200 bg-red-200/45"
+                  : "divide-primary/10 bg-primary/10 border border-primary/10"
+              }`}
+            >
+              <div
+                className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                  isChildZeroTeam
+                    ? "hover:bg-red-300/30"
+                    : "hover:bg-primary/15"
+                }`}
+              >
+                <span
+                  className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                    isChildZeroTeam ? "text-red-800/70" : "text-[#154be2]/80"
+                  }`}
+                >
+                  Stock in
+                </span>
+                <span
+                  className={`font-black text-[10px] truncate w-full ${
+                    isChildZeroTeam ? "text-red-800" : "text-[#154be2]"
+                  }`}
+                >
+                  {formatNum(child.sellIn)}
+                </span>
+              </div>
+              <div
+                className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                  isChildZeroTeam
+                    ? "hover:bg-red-300/30"
+                    : "hover:bg-amber-100/60"
+                }`}
+              >
+                <span
+                  className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                    isChildZeroTeam ? "text-red-800/70" : "text-amber-800"
+                  }`}
+                >
+                  idle stock
+                </span>
+                <span
+                  className={`font-black text-[10px] truncate w-full ${
+                    isChildZeroTeam ? "text-red-800" : "text-amber-700"
+                  }`}
+                >
+                  {formatNum(child.idleStock)}
+                </span>
+              </div>
+              <div
+                className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                  isChildZeroTeam
+                    ? "hover:bg-red-300/30"
+                    : "hover:bg-emerald-100/60"
+                }`}
+              >
+                <span
+                  className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                    isChildZeroTeam ? "text-red-800/70" : "text-emerald-800"
+                  }`}
+                >
+                  POG
+                </span>
+                <span
+                  className={`font-black text-[10px] truncate w-full ${
+                    isChildZeroTeam
+                      ? "text-red-800"
+                      : "text-emerald-700 font-extrabold"
+                  }`}
+                >
+                  {formatNum(child.pog)}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
+
+        {isSubExpanded && hasSubChildren && (
+          <div className="flex flex-col border-l border-[#edecff] ml-3 pl-1 gap-1 mb-2">
+            {child.children.map((subChild: any) =>
+              renderRecursivePogSubordinate(subChild, depth + 1),
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
   const renderRecursivePogRow = (row: any, depth = 0): React.ReactNode => {
     const hasChildren = row.children && row.children.length > 0;
     const isExpanded = !!pogExpandedRows[row.name];
-    
+
     // Determine level badge style
     const levelVal = row.level;
-    const levelLabel = levelVal !== undefined ? `Level ${levelVal}` : '';
-    const isZeroPogActivity = row.lastQty === 0 && row.sellIn === 0 && row.sellOut === 0 && row.totalInv === 0 && row.currentQty === 0;
+    const levelLabel = levelVal !== undefined ? `Level ${levelVal}` : "";
+    const isZeroPogActivity =
+      row.lastQty === 0 &&
+      row.sellIn === 0 &&
+      row.sellOut === 0 &&
+      row.totalInv === 0 &&
+      row.currentQty === 0;
 
     return (
-      <div key={row.name} className={`overflow-hidden transition-all ${isZeroPogActivity ? 'bg-red-50/40 border-l-[3px] border-red-300' : ''} ${depth === 0 ? 'md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]' : ''}`}>
-        <div 
-          className={`flex justify-between items-center px-5 py-4 pb-2 transition-colors duration-150 animate-in fade-in slide-in-from-right-2 duration-200 ${isZeroPogActivity ? 'hover:bg-red-100/40' : 'hover:bg-slate-50/60'}`}
+      <div
+        key={row.name}
+        className={`overflow-hidden transition-all ${isZeroPogActivity ? "bg-red-50/40 border-l-[3px] border-red-300" : ""} ${depth === 0 ? "md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]" : ""}`}
+      >
+        <div
+          className={`flex justify-between items-center px-5 py-4 pb-2 transition-colors duration-150 animate-in fade-in slide-in-from-right-2 duration-200 ${isZeroPogActivity ? "hover:bg-red-100/40" : "hover:bg-slate-50/60"}`}
           style={{ paddingLeft: `${Math.max(20, depth * 20)}px` }}
         >
           <div className="flex flex-col min-w-0 flex-1 pr-2">
-            <span 
+            <span
               className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5 cursor-pointer select-none"
               onClick={() => {
                 if (hasChildren) {
@@ -4792,75 +6811,149 @@ const Dashboard = ({
               }}
             >
               {hasChildren && (
-                <span className={`material-symbols-outlined text-[20px] shrink-0 ${isZeroPogActivity ? 'text-red-500' : 'text-primary'}`}>
-                  {isExpanded ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
+                <span
+                  className={`material-symbols-outlined text-[20px] shrink-0 ${isZeroPogActivity ? "text-red-500" : "text-primary"}`}
+                >
+                  {isExpanded ? "keyboard_arrow_down" : "keyboard_arrow_right"}
                 </span>
               )}
-              <span className="truncate">{renderMaybeChannelName(row.name)}</span>
+              <span className="truncate">
+                {renderMaybeChannelName(row.name)}
+              </span>
               {isZeroPogActivity && (
-                <span className="text-[7.5px] font-extrabold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider">No Activity</span>
+                <span className="text-[7.5px] font-extrabold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0 uppercase tracking-wider">
+                  No Activity
+                </span>
               )}
-              {row.isLeaf && pogSubGroupBy === 'channel' && row.category && (
-                <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">{row.category}</span>
+              {row.isLeaf && pogSubGroupBy === "channel" && row.category && (
+                <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+                  {row.category}
+                </span>
               )}
             </span>
-            {(!row.isLeaf && getStatsForPic(row.name)) && (
-                <div className="flex gap-1.5 mt-1 ml-6 text-[8.5px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">V: <span className="text-primary">{getStatsForPic(row.name)?.visited}</span></span>
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">C: <span className="text-[#181a2c]">{getStatsForPic(row.name)?.total}</span></span>
-                  <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1 text-emerald-600">%: <span>{getStatsForPic(row.name)?.percentage}%</span></span>
-                </div>
+            {!row.isLeaf && getStatsForPic(row.name) && (
+              <div className="flex gap-1.5 mt-1 ml-6 text-[8.5px] uppercase tracking-wide font-bold text-[#8E94B7] flex-wrap">
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                  V:{" "}
+                  <span className="text-primary">
+                    {getStatsForPic(row.name)?.visited}
+                  </span>
+                </span>
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1">
+                  C:{" "}
+                  <span className="text-[#181a2c]">
+                    {getStatsForPic(row.name)?.total}
+                  </span>
+                </span>
+                <span className="bg-[#f4f2ff] px-2 py-0.5 rounded-full border border-[#edecff] flex gap-1 text-emerald-600">
+                  %: <span>{getStatsForPic(row.name)?.percentage}%</span>
+                </span>
+              </div>
             )}
           </div>
           <div className="flex flex-col items-end shrink-0">
-            <span className={`font-bold text-sm ${isZeroPogActivity ? 'text-red-600' : 'text-primary'}`}>{formatNum(row.pog)}</span>
-            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">POG</span>
+            <span
+              className={`font-bold text-sm ${isZeroPogActivity ? "text-red-600" : "text-primary"}`}
+            >
+              {formatNum(row.pog)}
+            </span>
+            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">
+              POG
+            </span>
           </div>
         </div>
 
         {/* Dynamic primary row columns */}
-        <div className="mx-5 mb-3 mt-2 flex flex-row gap-1.5 md:gap-2"
-             style={{ marginLeft: `${Math.max(20, depth * 20)}px` }}>
+        <div
+          className="mx-5 mb-3 mt-2 flex flex-row gap-1.5 md:gap-2"
+          style={{ marginLeft: `${Math.max(20, depth * 20)}px` }}
+        >
           {/* Table 1: Opening Inv & End of Inv */}
-          <div className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
-            isZeroPogActivity 
-              ? 'divide-red-200 bg-red-300 shadow-[0_12px_32px_rgba(239,68,68,0.18)]' 
-              : 'divide-white/20 bg-primary/95 shadow-[0_12px_32px_rgba(21,75,226,0.25)]'
-          }`}>
-            <div className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-              <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? 'text-white/80' : 'text-white/85'}`}>Opening Inv</span>
-              <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.lastQty)}</span>
+          <div
+            className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
+              isZeroPogActivity
+                ? "divide-red-200 bg-red-300 shadow-[0_12px_32px_rgba(239,68,68,0.18)]"
+                : "divide-white/20 bg-primary/95 shadow-[0_12px_32px_rgba(21,75,226,0.25)]"
+            }`}
+          >
+            <div
+              className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+            >
+              <span
+                className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? "text-white/80" : "text-white/85"}`}
+              >
+                Opening Inv
+              </span>
+              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                {formatNum(row.lastQty)}
+              </span>
             </div>
-            <div className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-              <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? 'text-white/80' : 'text-white/85'}`}>End of Inv</span>
-              <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.currentQty)}</span>
+            <div
+              className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+            >
+              <span
+                className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? "text-white/80" : "text-white/85"}`}
+              >
+                End of Inv
+              </span>
+              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                {formatNum(row.currentQty)}
+              </span>
             </div>
           </div>
 
           {/* Table 2: Stock in, idle stock, POG */}
-          <div className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
-            isZeroPogActivity 
-              ? 'divide-red-200 bg-red-400 shadow-[0_12px_32px_rgba(239,68,68,0.18)]' 
-              : 'divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)]'
-          }`}>
-            <div className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-              <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? 'text-white/80' : 'text-white/85'}`}>Stock in</span>
-              <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.sellIn)}</span>
+          <div
+            className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
+              isZeroPogActivity
+                ? "divide-red-200 bg-red-400 shadow-[0_12px_32px_rgba(239,68,68,0.18)]"
+                : "divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)]"
+            }`}
+          >
+            <div
+              className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+            >
+              <span
+                className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? "text-white/80" : "text-white/85"}`}
+              >
+                Stock in
+              </span>
+              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                {formatNum(row.sellIn)}
+              </span>
             </div>
-            <div className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-              <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? 'text-white/80' : 'text-amber-200'}`}>idle stock</span>
-              <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.idleStock)}</span>
+            <div
+              className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+            >
+              <span
+                className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? "text-white/80" : "text-amber-200"}`}
+              >
+                idle stock
+              </span>
+              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                {formatNum(row.idleStock)}
+              </span>
             </div>
-            <div className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? 'hover:bg-white/15' : 'hover:bg-white/10'}`}>
-              <span className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? 'text-white/80' : 'text-cyan-250'}`}>POG</span>
-              <span className="font-semibold text-[10.5px] truncate w-full text-white font-extrabold">{formatNum(row.pog)}</span>
+            <div
+              className={`flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center transition-colors ${isZeroPogActivity ? "hover:bg-white/15" : "hover:bg-white/10"}`}
+            >
+              <span
+                className={`text-[8px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${isZeroPogActivity ? "text-white/80" : "text-cyan-250"}`}
+              >
+                POG
+              </span>
+              <span className="font-semibold text-[10.5px] truncate w-full text-white font-extrabold">
+                {formatNum(row.pog)}
+              </span>
             </div>
           </div>
         </div>
 
         {isExpanded && hasChildren && (
           <div className="pb-2 border-t border-[#edecff] bg-slate-50/15">
-            {row.children.map((child: any) => renderRecursivePogRow(child, depth + 1))}
+            {row.children.map((child: any) =>
+              renderRecursivePogRow(child, depth + 1),
+            )}
           </div>
         )}
       </div>
@@ -4872,20 +6965,26 @@ const Dashboard = ({
       <div className="flex flex-col items-center justify-center min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-[#f8fafc] px-4 pb-20 animate-in fade-in duration-500">
         <div className="bg-white p-8 rounded-[32px] shadow-[0_24px_64px_rgba(24,26,44,0.06)] border border-[#e2e8f0] flex flex-col items-center max-w-sm w-full gap-6">
           <div className="relative">
-             <div className="size-24 border-4 border-[#edecff] rounded-full flex items-center justify-center">
-               <span className="text-xl font-extrabold text-primary select-none">{loadProgress}%</span>
-             </div>
-             <div className="size-24 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+            <div className="size-24 border-4 border-[#edecff] rounded-full flex items-center justify-center">
+              <span className="text-xl font-extrabold text-primary select-none">
+                {loadProgress}%
+              </span>
+            </div>
+            <div className="size-24 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
           </div>
 
           <div className="text-center w-full">
-              <h3 className="text-[#181a2c] font-black text-xl mb-1 select-none">Menyiapkan Data...</h3>
-              <p className="text-[#8E94B7] text-[10px] font-bold uppercase tracking-widest select-none">SINKRONISASI DATABASE</p>
+            <h3 className="text-[#181a2c] font-black text-xl mb-1 select-none">
+              Menyiapkan Data...
+            </h3>
+            <p className="text-[#8E94B7] text-[10px] font-bold uppercase tracking-widest select-none">
+              SINKRONISASI DATABASE
+            </p>
           </div>
 
           <div className="w-full flex flex-col items-center gap-2">
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-[1px] border border-[#f1f5f9]">
-              <div 
+              <div
                 className="bg-gradient-to-r from-primary to-cyan-400 h-full rounded-full transition-all duration-150 ease-out shadow-[0_2px_8px_rgba(21,75,226,0.25)]"
                 style={{ width: `${loadProgress}%` }}
               ></div>
@@ -4899,7 +6998,7 @@ const Dashboard = ({
   return (
     <div className="w-full max-w-2xl mx-auto lg:max-w-5xl xl:max-w-6xl px-5 pb-8 relative">
       <div className="flex items-stretch gap-2 mb-8 mt-6 -ml-2.5">
-        <button 
+        <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
@@ -4912,17 +7011,17 @@ const Dashboard = ({
           className="flex flex-col items-center justify-center shrink-0 bg-gradient-to-r from-primary to-cyan-400 rounded-[24px] px-5 py-3 shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.02] active:scale-[0.98] transition-all min-w-[108px] cursor-pointer disabled:opacity-80 disabled:cursor-not-allowed select-none text-center border-0 appearance-none"
           title="Klik untuk Ambil Ulang Data dari Database"
         >
-           <AdvantaLogo className={`size-14 text-white ${isFetchingData ? 'animate-spin' : ''}`} />
-           <span className="text-[9px] font-bold text-white/90 uppercase tracking-widest mt-1 leading-none">
-             {isFetchingData ? 'Refreshed' : 'Radar'}
-           </span>
-         </button>
-        <div 
-          className="bg-gradient-to-r from-primary to-cyan-400 p-4 rounded-l-[28px] rounded-r-none -mr-5 shadow-[0_12px_32px_rgba(21,75,226,0.35)] text-white flex items-center justify-between flex-1 relative overflow-visible transition-all select-none duration-200"
-        >
+          <AdvantaLogo
+            className={`size-14 text-white ${isFetchingData ? "animate-spin" : ""}`}
+          />
+          <span className="text-[9px] font-bold text-white/90 uppercase tracking-widest mt-1 leading-none">
+            {isFetchingData ? "Refreshed" : "Radar"}
+          </span>
+        </button>
+        <div className="bg-gradient-to-r from-primary to-cyan-400 p-4 rounded-l-[28px] rounded-r-none -mr-5 shadow-[0_12px_32px_rgba(21,75,226,0.35)] text-white flex items-center justify-between flex-1 relative overflow-visible transition-all select-none duration-200">
           {/* Background and Logout wrapper that clips the huge user icon */}
           <div className="absolute inset-0 overflow-hidden rounded-l-[28px] z-0">
-            <div 
+            <div
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
@@ -4939,36 +7038,40 @@ const Dashboard = ({
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-3">
                 {greeting.imageUrl && (
-                  <img 
-                    src={greeting.imageUrl} 
-                    referrerPolicy="no-referrer" 
-                    className="size-12 md:size-14 object-contain opacity-100 shrink-0 pointer-events-none select-none animate-rotate-sway" 
-                    alt="" 
+                  <img
+                    src={greeting.imageUrl}
+                    referrerPolicy="no-referrer"
+                    className="size-12 md:size-14 object-contain opacity-100 shrink-0 pointer-events-none select-none animate-rotate-sway"
+                    alt=""
                   />
                 )}
                 <div className="flex-1 min-w-0 py-0.5">
-                  <p className="text-[9px] text-white/80 font-semibold uppercase tracking-widest leading-none mb-0.5">{greeting.text},</p>
-                  <h2 className="text-md md:text-lg font-bold text-white leading-tight truncate">{userData.name}</h2>
+                  <p className="text-[9px] text-white/80 font-semibold uppercase tracking-widest leading-none mb-0.5">
+                    {greeting.text},
+                  </p>
+                  <h2 className="text-md md:text-lg font-bold text-white leading-tight truncate">
+                    {userData.name}
+                  </h2>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      setIsQuickSwitchVisible(prev => !prev);
-                    }}
-                    className="text-[10px] md:text-xs font-bold text-white uppercase bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-full border border-white/20 backdrop-blur-sm truncate cursor-pointer transition-all active:scale-[0.97] select-none"
-                    title="Klik untuk tampilkan / sembunyikan ganti akun sementara"
-                  >
-                    {userData.position}
-                  </button>
-                  {userData.province && userData.province !== '-' && (
-                    <span className="text-[10px] md:text-xs font-bold text-white/80 uppercase bg-white/10 px-2.5 py-1 rounded-full border border-white/10 backdrop-blur-sm">
-                      {userData.province}
-                    </span>
-                  )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setIsQuickSwitchVisible((prev) => !prev);
+                  }}
+                  className="text-[10px] md:text-xs font-bold text-white uppercase bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-full border border-white/20 backdrop-blur-sm truncate cursor-pointer transition-all active:scale-[0.97] select-none"
+                  title="Klik untuk tampilkan / sembunyikan ganti akun sementara"
+                >
+                  {userData.position}
+                </button>
+                {userData.province && userData.province !== "-" && (
+                  <span className="text-[10px] md:text-xs font-bold text-white/80 uppercase bg-white/10 px-2.5 py-1 rounded-full border border-white/10 backdrop-blur-sm">
+                    {userData.province}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -4976,26 +7079,44 @@ const Dashboard = ({
             {isQuickSwitchVisible && (
               <div className="flex flex-col gap-1.5 mt-2.5 pt-2.5 border-t border-white/15 select-none text-left animate-in fade-in slide-in-from-top-1 duration-200">
                 <div className="flex items-center justify-between">
-                  <span className="text-[7.5px] text-white/70 font-bold uppercase tracking-wider">Quick Switch Account (Temporary):</span>
+                  <span className="text-[7.5px] text-white/70 font-bold uppercase tracking-wider">
+                    Quick Switch Account (Temporary):
+                  </span>
                   {isUserSwitching && (
                     <span className="flex items-center gap-1 text-[7.5px] text-cyan-200 font-bold animate-pulse">
-                       <svg className="animate-spin h-2.5 w-2.5 text-cyan-200" fill="none" viewBox="0 0 24 24">
-                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                       </svg>
-                       Switching...
+                      <svg
+                        className="animate-spin h-2.5 w-2.5 text-cyan-200"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                      >
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Switching...
                     </span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {[
-                    { name: 'Aditya Wiratama', nick: 'Aditya' },
-                    { name: 'Suryanto Budi Santoso', nick: 'Suryanto' },
-                    { name: 'Christien Yunianto', nick: 'Christien' },
-                    { name: 'Agus Herdianto', nick: 'Agus' },
-                    { name: 'Listianto', nick: 'Listianto' }
+                    { name: "Aditya Wiratama", nick: "Aditya" },
+                    { name: "Suryanto Budi Santoso", nick: "Suryanto" },
+                    { name: "Christien Yunianto", nick: "Christien" },
+                    { name: "Agus Herdianto", nick: "Agus" },
+                    { name: "Listianto", nick: "Listianto" },
                   ].map((u) => {
-                    const isActive = cleanForMatch(userData.name) === cleanForMatch(u.name);
+                    const isActive =
+                      cleanForMatch(userData.name) === cleanForMatch(u.name);
                     return (
                       <button
                         key={u.name}
@@ -5010,8 +7131,8 @@ const Dashboard = ({
                         disabled={isUserSwitching}
                         className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold transition-all cursor-pointer select-none active:scale-[0.98] ${
                           isActive
-                            ? 'bg-white text-primary shadow-[0_2px_8px_rgba(21,75,226,0.15)] ring-1 ring-white/10'
-                            : 'bg-white/10 hover:bg-white/20 text-white border border-white/5'
+                            ? "bg-white text-primary shadow-[0_2px_8px_rgba(21,75,226,0.15)] ring-1 ring-white/10"
+                            : "bg-white/10 hover:bg-white/20 text-white border border-white/5"
                         }`}
                       >
                         {u.nick}
@@ -5019,38 +7140,44 @@ const Dashboard = ({
                     );
                   })}
                 </div>
-
-
               </div>
             )}
-
           </div>
-
         </div>
       </div>
 
-      {activeTab === 'overview' && (
+      {activeTab === "overview" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
           {/* Header */}
           <div className="mb-6 ml-1 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">Executive <span className="text-primary font-bold">Overview</span></h1>
-              <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mt-0.5">Analisis Nasional - Level {userLevel} & Eksekutif</p>
+              <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+                Executive{" "}
+                <span className="text-primary font-bold">Overview</span>
+              </h1>
+              <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mt-0.5">
+                Analisis Nasional - Level {userLevel} & Eksekutif
+              </p>
             </div>
           </div>
 
           {/* Detailed Filters (Filter 2: Month, Channel, Material, Team, Area) */}
           <div className="bg-white p-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 mb-6">
             <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-100">
-              <span className="material-symbols-outlined text-primary text-[18px] font-semibold">filter_alt</span>
-              <h4 className="text-[11px] font-bold text-[#181a2c] uppercase tracking-wider">Filter Dashboard Analisis Eksekutif</h4>
+              <span className="material-symbols-outlined text-primary text-[18px] font-semibold">
+                filter_alt
+              </span>
+              <h4 className="text-[11px] font-bold text-[#181a2c] uppercase tracking-wider">
+                Filter Dashboard Analisis Eksekutif
+              </h4>
             </div>
-            
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-              
               {/* Filter 2 - Month */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Bulan</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Bulan
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowMonth}
@@ -5058,17 +7185,23 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Bulan</option>
-                    {filterOptions.months.map(m => (
-                      <option key={m} value={m}>{m}</option>
+                    {filterOptions.months.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
 
               {/* Filter 2 - Channel */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Channel (Kategori)</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Channel (Kategori)
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowChannel}
@@ -5076,17 +7209,23 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Channel</option>
-                    {filterOptions.channels.map(c => (
-                      <option key={c} value={c}>{c}</option>
+                    {filterOptions.channels.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
 
               {/* Filter 2 - Material */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Hybrid</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Hybrid
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowMaterial}
@@ -5094,17 +7233,23 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Hybrid</option>
-                    {filterOptions.materials.map(m => (
-                      <option key={m} value={m}>{m}</option>
+                    {filterOptions.materials.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
 
               {/* Filter 2 - Team */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Tim (PIC)</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Tim (PIC)
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowTeam}
@@ -5112,17 +7257,23 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Tim PIC</option>
-                    {filterOptions.teams.map(t => (
-                      <option key={t} value={t}>{t}</option>
+                    {filterOptions.teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
 
               {/* Filter 2 - Area */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Wilayah (Area)</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Wilayah (Area)
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowArea}
@@ -5130,17 +7281,23 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Wilayah</option>
-                    {filterOptions.areas.map(a => (
-                      <option key={a} value={a}>{a}</option>
+                    {filterOptions.areas.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
 
               {/* Filter 2 - Crop */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Komoditas (Crop)</label>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Komoditas (Crop)
+                </label>
                 <div className="relative">
                   <select
                     value={filterBelowCrop}
@@ -5148,155 +7305,230 @@ const Dashboard = ({
                     className="w-full bg-[#fbfaff] border border-[#e2e8f0] rounded-xl px-3 py-2 text-xs font-bold text-[#181a2c] focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all appearance-none cursor-pointer pr-10"
                   >
                     <option value="All">Semua Crop</option>
-                    {['Field Corn', 'Fresh Corn', 'Vegetables'].map(crop => (
-                      <option key={crop} value={crop}>{crop}</option>
+                    {["Field Corn", "Fresh Corn", "Vegetables"].map((crop) => (
+                      <option key={crop} value={crop}>
+                        {crop}
+                      </option>
                     ))}
                   </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">expand_more</span>
+                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[16px] text-[#8E94B7] pointer-events-none">
+                    expand_more
+                  </span>
                 </div>
               </div>
-
             </div>
           </div>
 
           {/* KPI Cards Grid */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
-            
             {/* KPI 1: Opening Inv */}
             <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-[36px] text-amber-500">inventory_2</span>
+                <span className="material-symbols-outlined text-[36px] text-amber-500">
+                  inventory_2
+                </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">OPENING INV</p>
+              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+                OPENING INV
+              </p>
               <div className="mt-2 font-sans font-bold text-amber-600">
-                <span className="text-xl md:text-2xl">{overviewStats.totalOpeningStock.toLocaleString()}</span>
-                <span className="text-[9px] text-amber-500 font-semibold ml-1">Kg</span>
+                <span className="text-xl md:text-2xl">
+                  {overviewStats.totalOpeningStock.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-amber-500 font-semibold ml-1">
+                  Kg
+                </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">Inventori awal bulan saat ini</p>
+              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
+                Inventori awal bulan saat ini
+              </p>
             </div>
 
             {/* KPI 2: Ending Inv */}
             <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-[36px] text-purple-500">warehouse</span>
+                <span className="material-symbols-outlined text-[36px] text-purple-500">
+                  warehouse
+                </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">ENDING INV</p>
+              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+                ENDING INV
+              </p>
               <div className="mt-2 font-sans font-bold text-purple-600">
-                <span className="text-xl md:text-2xl">{overviewStats.totalCurrentStock.toLocaleString()}</span>
-                <span className="text-[9px] text-purple-500 font-semibold ml-1">Kg</span>
+                <span className="text-xl md:text-2xl">
+                  {overviewStats.totalCurrentStock.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-purple-500 font-semibold ml-1">
+                  Kg
+                </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">Sisa stok akhir saat ini</p>
+              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
+                Sisa stok akhir saat ini
+              </p>
             </div>
 
             {/* KPI 3: Stock In */}
             <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-[36px] text-green-500">add_shopping_cart</span>
+                <span className="material-symbols-outlined text-[36px] text-green-500">
+                  add_shopping_cart
+                </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">STOCK IN</p>
+              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+                STOCK IN
+              </p>
               <div className="mt-2 text-green-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">{overviewStats.totalSellIn.toLocaleString()}</span>
-                <span className="text-[9px] text-green-500 font-semibold ml-1">Kg</span>
+                <span className="text-xl md:text-2xl">
+                  {overviewStats.totalSellIn.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-green-500 font-semibold ml-1">
+                  Kg
+                </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">Inflow stock bulan ini</p>
+              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
+                Inflow stock bulan ini
+              </p>
             </div>
 
             {/* KPI 4: Idle Stock */}
             <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-[36px] text-indigo-500">hourglass_empty</span>
+                <span className="material-symbols-outlined text-[36px] text-indigo-500">
+                  hourglass_empty
+                </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">IDLE STOCK</p>
+              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+                IDLE STOCK
+              </p>
               <div className="mt-2 text-indigo-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">{overviewStats.totalIdleStock.toLocaleString()}</span>
-                <span className="text-[9px] text-indigo-500 font-semibold ml-1">Kg</span>
+                <span className="text-xl md:text-2xl">
+                  {overviewStats.totalIdleStock.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-indigo-500 font-semibold ml-1">
+                  Kg
+                </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">Stok mengendap saat ini</p>
+              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
+                Stok mengendap saat ini
+              </p>
             </div>
 
             {/* KPI 5: POG */}
             <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300 col-span-2 lg:col-span-1">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-[36px] text-blue-500">trending_up</span>
+                <span className="material-symbols-outlined text-[36px] text-blue-500">
+                  trending_up
+                </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">POG</p>
+              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+                POG
+              </p>
               <div className="mt-2 text-blue-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">{overviewStats.totalSellOut.toLocaleString()}</span>
-                <span className="text-[9px] text-blue-500 font-semibold ml-1">Kg</span>
+                <span className="text-xl md:text-2xl">
+                  {overviewStats.totalSellOut.toLocaleString()}
+                </span>
+                <span className="text-[9px] text-blue-500 font-semibold ml-1">
+                  Kg
+                </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">Total penjualan ke petani</p>
+              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
+                Total penjualan ke petani
+              </p>
             </div>
-
           </div>
 
           {/* Charts Grid Row 1 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            
             {/* Chart 1: Sales (POG) & Stock per Area / Dimension */}
             <div className="lg:col-span-2 bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 flex flex-col justify-between">
               <div className="flex flex-col gap-4 mb-6 pb-4 border-b border-[#f0effc]/60">
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary text-sm font-semibold border-b border-primary/20 pb-0.5">
-                      {overviewGroupDimension === 'material' ? 'widgets' : overviewGroupDimension === 'province' ? 'map' : 'analytics'}
+                      {overviewGroupDimension === "material"
+                        ? "widgets"
+                        : overviewGroupDimension === "province"
+                          ? "map"
+                          : "analytics"}
                     </span>
                     <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">
-                      {overviewGroupDimension === 'area' ? 'Performa Kinerja Wilayah (Area)' :
-                       overviewGroupDimension === 'province' ? 'Performa Kinerja per Provinsi' :
-                       overviewGroupDimension === 'sales_agronomist' ? 'Performa Kinerja Sales Agronomist (SA)' :
-                       overviewGroupDimension === 'business_solution' ? 'Performa Kinerja Business Solution (BS)' :
-                       overviewGroupDimension === 'distributor' ? 'Performa Kinerja per Distributor' :
-                       'Performa Kinerja per Hybrid'}
+                      {overviewGroupDimension === "area"
+                        ? "Performa Kinerja Wilayah (Area)"
+                        : overviewGroupDimension === "province"
+                          ? "Performa Kinerja per Provinsi"
+                          : overviewGroupDimension === "sales_agronomist"
+                            ? "Performa Kinerja Sales Agronomist (SA)"
+                            : overviewGroupDimension === "business_solution"
+                              ? "Performa Kinerja Business Solution (BS)"
+                              : overviewGroupDimension === "distributor"
+                                ? "Performa Kinerja per Distributor"
+                                : "Performa Kinerja per Hybrid"}
                     </h3>
                   </div>
                   <p className="text-[10px] text-[#8E94B7] mt-0.5">
-                    {overviewMetricFilter === 'movement' 
-                      ? 'Analisis perbandingan Stock In (Stok Masuk) vs POG (Penjualan)' 
-                      : overviewMetricFilter === 'idle'
-                        ? 'Analisis perbandingan Idle Stock vs Sisa Stok Akhir'
-                        : overviewMetricFilter === 'total_stock'
-                          ? 'Analisis total sisa stok akhir'
-                          : overviewMetricFilter === 'Opening' 
-                            ? 'Analisis perbandingan Stok Awal vs Sisa Stok Akhir'
-                            : 'Analisis perbandingan POG (Penjualan) vs Sisa Stok Akhir'}
+                    {overviewMetricFilter === "movement"
+                      ? "Analisis perbandingan Stock In (Stok Masuk) vs POG (Penjualan)"
+                      : overviewMetricFilter === "idle"
+                        ? "Analisis perbandingan Idle Stock vs Sisa Stok Akhir"
+                        : overviewMetricFilter === "total_stock"
+                          ? "Analisis total sisa stok akhir"
+                          : overviewMetricFilter === "Opening"
+                            ? "Analisis perbandingan Stok Awal vs Sisa Stok Akhir"
+                            : "Analisis perbandingan POG (Penjualan) vs Sisa Stok Akhir"}
                   </p>
                 </div>
-                
+
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Selector Filter 2: Dimensi Grouping */}
                   <div className="flex items-center gap-2 bg-[#fbfaff] px-2.5 py-1 rounded-xl border border-[#e2e8f0]/80">
-                    <span className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-wider">Dimensi:</span>
+                    <span className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                      Dimensi:
+                    </span>
                     <div className="relative">
                       <select
                         value={overviewGroupDimension}
-                        onChange={(e: any) => setOverviewGroupDimension(e.target.value as any)}
+                        onChange={(e: any) =>
+                          setOverviewGroupDimension(e.target.value as any)
+                        }
                         className="bg-transparent text-[10.5px] font-black text-[#154be2] focus:outline-none focus:ring-0 appearance-none cursor-pointer pr-6 py-0.5"
                       >
                         <option value="area">Area</option>
                         <option value="province">Province</option>
-                        <option value="sales_agronomist">Sales Agronomist</option>
-                        <option value="business_solution">Business Solution</option>
+                        <option value="sales_agronomist">
+                          Sales Agronomist
+                        </option>
+                        <option value="business_solution">
+                          Business Solution
+                        </option>
                         <option value="material">Hybrid</option>
                         <option value="distributor">Distributor</option>
                       </select>
-                      <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[14px] text-primary pointer-events-none">expand_more</span>
+                      <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[14px] text-primary pointer-events-none">
+                        expand_more
+                      </span>
                     </div>
                   </div>
 
                   {/* Selector Filter 1 (Metric) */}
                   <div className="flex items-center gap-2 bg-[#fbfaff] px-2.5 py-1 rounded-xl border border-[#e2e8f0]/80">
-                    <span className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-wider">Metrik:</span>
+                    <span className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                      Metrik:
+                    </span>
                     <div className="relative">
                       <select
                         value={overviewMetricFilter}
-                        onChange={(e: any) => setOverviewMetricFilter(e.target.value)}
+                        onChange={(e: any) =>
+                          setOverviewMetricFilter(e.target.value)
+                        }
                         className="bg-transparent text-[10.5px] font-black text-[#154be2] focus:outline-none focus:ring-0 appearance-none cursor-pointer pr-6 py-0.5"
                       >
                         <option value="movement">Movement</option>
                         <option value="idle">Idle Stock</option>
                         <option value="total_stock">Total Stock</option>
                       </select>
-                      <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[14px] text-primary pointer-events-none">expand_more</span>
+                      <span className="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-[14px] text-primary pointer-events-none">
+                        expand_more
+                      </span>
                     </div>
                   </div>
 
@@ -5305,116 +7537,228 @@ const Dashboard = ({
                     <div className="flex items-center gap-1.5">
                       <span className="size-2.5 rounded-[4px] bg-gradient-to-tr from-[#154be2] to-[#3b82f6]" />
                       <span className="text-[10px] font-extrabold text-[#4e5572]">
-                        {overviewMetricFilter === 'movement' ? 'Stock In' : overviewMetricFilter === 'idle' ? 'Idle Stock' : overviewMetricFilter === 'total_stock' ? 'Total Stock' : overviewMetricFilter === 'Opening' ? 'Stok Awal' : 'POG (Penjualan)'}
+                        {overviewMetricFilter === "movement"
+                          ? "Stock In"
+                          : overviewMetricFilter === "idle"
+                            ? "Idle Stock"
+                            : overviewMetricFilter === "total_stock"
+                              ? "Total Stock"
+                              : overviewMetricFilter === "Opening"
+                                ? "Stok Awal"
+                                : "POG (Penjualan)"}
                       </span>
                     </div>
-                    {overviewMetricFilter !== 'idle' && overviewMetricFilter !== 'total_stock' && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="size-2.5 rounded-[4px] bg-gradient-to-tr from-[#06b6d4] to-[#22d3ee]" />
-                        <span className="text-[10px] font-extrabold text-[#4e5572]">
-                          {overviewMetricFilter === 'movement' ? 'POG' : 'Stok Akhir'}
-                        </span>
-                      </div>
-                    )}
+                    {overviewMetricFilter !== "idle" &&
+                      overviewMetricFilter !== "total_stock" && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="size-2.5 rounded-[4px] bg-gradient-to-tr from-[#06b6d4] to-[#22d3ee]" />
+                          <span className="text-[10px] font-extrabold text-[#4e5572]">
+                            {overviewMetricFilter === "movement"
+                              ? "POG"
+                              : "Stok Akhir"}
+                          </span>
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>
-              
+
               <div className="w-full overflow-x-auto scrollbar-thin select-none">
-                <div style={{ minWidth: '100%', width: overviewStats.areaChartData.length > 8 ? `${overviewStats.areaChartData.length * 75}px` : '100%', height: '280px' }} className="font-sans">
+                <div
+                  style={{
+                    minWidth: "100%",
+                    width:
+                      overviewStats.areaChartData.length > 8
+                        ? `${overviewStats.areaChartData.length * 75}px`
+                        : "100%",
+                    height: "280px",
+                  }}
+                  className="font-sans"
+                >
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={overviewStats.areaChartData} margin={{ top: 25, right: 10, left: -10, bottom: 25 }}>
+                    <BarChart
+                      data={overviewStats.areaChartData}
+                      margin={{ top: 25, right: 10, left: -10, bottom: 25 }}
+                    >
                       <defs>
-                        <linearGradient id="colorAreaPog" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#154be2" stopOpacity={0.95}/>
-                          <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.7}/>
+                        <linearGradient
+                          id="colorAreaPog"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor="#154be2"
+                            stopOpacity={0.95}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor="#3b82f6"
+                            stopOpacity={0.7}
+                          />
                         </linearGradient>
-                        <linearGradient id="colorAreaStock" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.95}/>
-                          <stop offset="100%" stopColor="#22d3ee" stopOpacity={0.7}/>
+                        <linearGradient
+                          id="colorAreaStock"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <stop
+                            offset="0%"
+                            stopColor="#06b6d4"
+                            stopOpacity={0.95}
+                          />
+                          <stop
+                            offset="100%"
+                            stopColor="#22d3ee"
+                            stopOpacity={0.7}
+                          />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
-                      <XAxis dataKey="name" tick={<CustomXAxisTick />} axisLine={false} tickLine={false} interval={0} />
-                      <YAxis tick={{ fill: '#8E94B7', fontSize: 9, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                      <Tooltip 
-                        cursor={{ fill: 'rgba(21, 75, 226, 0.03)' }}
-                        contentStyle={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #edecff', boxShadow: '0 12px 32px rgba(21,75,226,0.1)' }} 
-                        labelStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#181a2c' }}
-                        itemStyle={{ fontSize: '10px', padding: '1px 0' }}
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke="#e2e8f0"
                       />
-                      <Bar 
+                      <XAxis
+                        dataKey="name"
+                        tick={<CustomXAxisTick />}
+                        axisLine={false}
+                        tickLine={false}
+                        interval={0}
+                      />
+                      <YAxis
+                        tick={{ fill: "#8E94B7", fontSize: 9, fontWeight: 500 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "rgba(21, 75, 226, 0.03)" }}
+                        contentStyle={{
+                          backgroundColor: "white",
+                          borderRadius: "16px",
+                          border: "1px solid #edecff",
+                          boxShadow: "0 12px 32px rgba(21,75,226,0.1)",
+                        }}
+                        labelStyle={{
+                          fontSize: "11px",
+                          fontWeight: "bold",
+                          color: "#181a2c",
+                        }}
+                        itemStyle={{ fontSize: "10px", padding: "1px 0" }}
+                      />
+                      <Bar
                         dataKey={
-                          overviewMetricFilter === 'movement' 
-                            ? 'sellIn' 
-                            : overviewMetricFilter === 'idle'
-                              ? 'idle'
-                              : overviewMetricFilter === 'total_stock'
-                                ? 'stock'
-                                : overviewMetricFilter === 'Opening' 
-                                  ? 'opening' 
-                                  : 'pog'
-                        } 
+                          overviewMetricFilter === "movement"
+                            ? "sellIn"
+                            : overviewMetricFilter === "idle"
+                              ? "idle"
+                              : overviewMetricFilter === "total_stock"
+                                ? "stock"
+                                : overviewMetricFilter === "Opening"
+                                  ? "opening"
+                                  : "pog"
+                        }
                         name={
-                          overviewMetricFilter === 'movement' 
-                            ? 'Stock In' 
-                            : overviewMetricFilter === 'idle'
-                              ? 'Idle Stock'
-                              : overviewMetricFilter === 'total_stock'
-                                ? 'Total Stock'
-                                : overviewMetricFilter === 'Opening' 
-                                  ? 'Stok Awal' 
-                                  : 'Penjualan (POG)'
-                        } 
-                        fill="url(#colorAreaPog)" 
-                        radius={[6, 6, 0, 0]} 
-                        maxBarSize={32} 
+                          overviewMetricFilter === "movement"
+                            ? "Stock In"
+                            : overviewMetricFilter === "idle"
+                              ? "Idle Stock"
+                              : overviewMetricFilter === "total_stock"
+                                ? "Total Stock"
+                                : overviewMetricFilter === "Opening"
+                                  ? "Stok Awal"
+                                  : "Penjualan (POG)"
+                        }
+                        fill="url(#colorAreaPog)"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={32}
                       >
-                        <LabelList 
+                        <LabelList
                           dataKey={
-                            overviewMetricFilter === 'movement' 
-                              ? 'sellIn' 
-                              : overviewMetricFilter === 'idle'
-                                ? 'idle'
-                                : overviewMetricFilter === 'total_stock'
-                                  ? 'stock'
-                                  : overviewMetricFilter === 'Opening' 
-                                    ? 'opening' 
-                                    : 'pog'
+                            overviewMetricFilter === "movement"
+                              ? "sellIn"
+                              : overviewMetricFilter === "idle"
+                                ? "idle"
+                                : overviewMetricFilter === "total_stock"
+                                  ? "stock"
+                                  : overviewMetricFilter === "Opening"
+                                    ? "opening"
+                                    : "pog"
                           }
                           position="top"
                           offset={8}
-                          style={{ fontSize: 9, fontWeight: 700, fill: '#154be2', fontFamily: 'sans-serif' }}
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            fill: "#154be2",
+                            fontFamily: "sans-serif",
+                          }}
                           formatter={(val: any) => {
-                            if (val === undefined || val === null || isNaN(Number(val))) return '';
+                            if (
+                              val === undefined ||
+                              val === null ||
+                              isNaN(Number(val))
+                            )
+                              return "";
                             const num = Number(val);
-                            if (num === 0) return '0';
-                            return Math.abs(num) < 10 ? num.toFixed(1) : Math.round(num).toLocaleString();
+                            if (num === 0) return "0";
+                            return Math.abs(num) < 10
+                              ? num.toFixed(1)
+                              : Math.round(num).toLocaleString();
                           }}
                         />
                       </Bar>
-                      {overviewMetricFilter !== 'idle' && overviewMetricFilter !== 'total_stock' && (
-                        <Bar 
-                          dataKey={overviewMetricFilter === 'movement' ? 'pog' : 'stock'} 
-                          name={overviewMetricFilter === 'movement' ? 'POG' : 'Stok Akhir'} 
-                          fill="url(#colorAreaStock)" 
-                          radius={[6, 6, 0, 0]} 
-                          maxBarSize={32} 
-                        >
-                          <LabelList 
-                            dataKey={overviewMetricFilter === 'movement' ? 'pog' : 'stock'}
-                            position="top"
-                            offset={8}
-                            style={{ fontSize: 9, fontWeight: 700, fill: '#0a90a6', fontFamily: 'sans-serif' }}
-                            formatter={(val: any) => {
-                              if (val === undefined || val === null || isNaN(Number(val))) return '';
-                              const num = Number(val);
-                              if (num === 0) return '0';
-                              return Math.abs(num) < 10 ? num.toFixed(1) : Math.round(num).toLocaleString();
-                            }}
-                          />
-                        </Bar>
-                      )}
+                      {overviewMetricFilter !== "idle" &&
+                        overviewMetricFilter !== "total_stock" && (
+                          <Bar
+                            dataKey={
+                              overviewMetricFilter === "movement"
+                                ? "pog"
+                                : "stock"
+                            }
+                            name={
+                              overviewMetricFilter === "movement"
+                                ? "POG"
+                                : "Stok Akhir"
+                            }
+                            fill="url(#colorAreaStock)"
+                            radius={[6, 6, 0, 0]}
+                            maxBarSize={32}
+                          >
+                            <LabelList
+                              dataKey={
+                                overviewMetricFilter === "movement"
+                                  ? "pog"
+                                  : "stock"
+                              }
+                              position="top"
+                              offset={8}
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 700,
+                                fill: "#0a90a6",
+                                fontFamily: "sans-serif",
+                              }}
+                              formatter={(val: any) => {
+                                if (
+                                  val === undefined ||
+                                  val === null ||
+                                  isNaN(Number(val))
+                                )
+                                  return "";
+                                const num = Number(val);
+                                if (num === 0) return "0";
+                                return Math.abs(num) < 10
+                                  ? num.toFixed(1)
+                                  : Math.round(num).toLocaleString();
+                              }}
+                            />
+                          </Bar>
+                        )}
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -5425,10 +7769,17 @@ const Dashboard = ({
             <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 pb-4 border-b border-[#f0effc]/60">
-                  <span className="material-symbols-outlined text-purple-500 text-sm font-semibold">pie_chart</span>
-                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">Segmentasi Partner</h3>
+                  <span className="material-symbols-outlined text-purple-500 text-sm font-semibold">
+                    pie_chart
+                  </span>
+                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">
+                    Segmentasi Partner
+                  </h3>
                 </div>
-                <p className="text-[10px] text-[#8E94B7] mt-1.5 leading-relaxed">Klasifikasi kelas kios berdasarkan kriteria volume penjualan nasional</p>
+                <p className="text-[10px] text-[#8E94B7] mt-1.5 leading-relaxed">
+                  Klasifikasi kelas kios berdasarkan kriteria volume penjualan
+                  nasional
+                </p>
               </div>
 
               <div className="h-44 w-full relative my-3">
@@ -5444,86 +7795,157 @@ const Dashboard = ({
                       dataKey="value"
                     >
                       {overviewStats.categoryChartData.map((entry, index) => {
-                        const colors = ['#154be2', '#06b6d4', '#a855f7', '#f59e0b', '#ec4899'];
-                        return <Cell key={`cell-${index}`} fill={colors[index % colors.length]} stroke="rgba(255,255,255,0.8)" strokeWidth={2} />;
+                        const colors = [
+                          "#154be2",
+                          "#06b6d4",
+                          "#a855f7",
+                          "#f59e0b",
+                          "#ec4899",
+                        ];
+                        return (
+                          <Cell
+                            key={`cell-${index}`}
+                            fill={colors[index % colors.length]}
+                            stroke="rgba(255,255,255,0.8)"
+                            strokeWidth={2}
+                          />
+                        );
                       })}
                     </Pie>
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: 'white', borderRadius: '12px', border: '1px solid #edecff', boxShadow: '0 8px 24px rgba(21,75,226,0.08)' }}
-                      itemStyle={{ fontSize: '10px', fontWeight: 'bold' }}
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "white",
+                        borderRadius: "12px",
+                        border: "1px solid #edecff",
+                        boxShadow: "0 8px 24px rgba(21,75,226,0.08)",
+                      }}
+                      itemStyle={{ fontSize: "10px", fontWeight: "bold" }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
-                
+
                 {/* Center count indicator */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none mt-1">
-                  <span className="text-2xl font-black text-[#181a2c] tracking-tight">{overviewStats.totalKiosks}</span>
-                  <span className="text-[8px] text-[#8E94B7] font-bold uppercase tracking-wider text-center">Outlet</span>
+                  <span className="text-2xl font-black text-[#181a2c] tracking-tight">
+                    {overviewStats.totalKiosks}
+                  </span>
+                  <span className="text-[8px] text-[#8E94B7] font-bold uppercase tracking-wider text-center">
+                    Outlet
+                  </span>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#f0effc]">
                 {overviewStats.categoryChartData.map((item, index) => {
-                  const colors = ['#154be2', '#06b6d4', '#a855f7', '#f59e0b', '#ec4899'];
+                  const colors = [
+                    "#154be2",
+                    "#06b6d4",
+                    "#a855f7",
+                    "#f59e0b",
+                    "#ec4899",
+                  ];
                   return (
-                    <div key={item.name} className="flex flex-col items-center p-1 bg-[#fbfaff] rounded-lg border border-[#f0effc]">
+                    <div
+                      key={item.name}
+                      className="flex flex-col items-center p-1 bg-[#fbfaff] rounded-lg border border-[#f0effc]"
+                    >
                       <div className="flex items-center gap-1">
-                        <span className="size-1.5 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
-                        <span className="text-[9px] font-bold text-[#181a2c]">{item.name}</span>
+                        <span
+                          className="size-1.5 rounded-full"
+                          style={{
+                            backgroundColor: colors[index % colors.length],
+                          }}
+                        />
+                        <span className="text-[9px] font-bold text-[#181a2c]">
+                          {item.name}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-[#555a77] font-bold mt-0.5">{item.value} Kios</span>
+                      <span className="text-[10px] text-[#555a77] font-bold mt-0.5">
+                        {item.value} Kios
+                      </span>
                     </div>
                   );
                 })}
               </div>
             </div>
-
           </div>
 
           {/* Section: Employee Sales Ranking (Highest & Lowest) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            
             {/* Top 5 Employees - Highest Sales */}
             <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-emerald-500 text-sm font-semibold">trending_up</span>
-                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">Top 5 Employee dengan Penjualan Tertinggi</h3>
+                  <span className="material-symbols-outlined text-emerald-500 text-sm font-semibold">
+                    trending_up
+                  </span>
+                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">
+                    Top 5 Employee dengan Penjualan Tertinggi
+                  </h3>
                 </div>
-                <p className="text-[10px] text-[#8E94B7] mt-0.5">Daftar tim penjualan dengan pencapaian POG tertinggi saat ini</p>
+                <p className="text-[10px] text-[#8E94B7] mt-0.5">
+                  Daftar tim penjualan dengan pencapaian POG tertinggi saat ini
+                </p>
               </div>
 
               <div className="flex flex-col gap-3 mt-4">
                 {employeePerformanceData.highest.map((item, index) => (
-                  <div key={item.employee} className="flex items-center justify-between p-3 rounded-xl bg-[#fbfaff] border border-[#f0effc] hover:border-[#154be2]/20 transition-all duration-200">
+                  <div
+                    key={item.employee}
+                    className="flex items-center justify-between p-3 rounded-xl bg-[#fbfaff] border border-[#f0effc] hover:border-[#154be2]/20 transition-all duration-200"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`size-8 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${
-                        index === 0 ? 'bg-amber-100 text-amber-700' :
-                        index === 1 ? 'bg-slate-200 text-slate-700' :
-                        index === 2 ? 'bg-orange-100 text-orange-700' :
-                        'bg-[#154be2]/10 text-primary'
-                      }`}>
+                      <div
+                        className={`size-8 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${
+                          index === 0
+                            ? "bg-amber-100 text-amber-700"
+                            : index === 1
+                              ? "bg-slate-200 text-slate-700"
+                              : index === 2
+                                ? "bg-orange-100 text-orange-700"
+                                : "bg-[#154be2]/10 text-primary"
+                        }`}
+                      >
                         #{index + 1}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-[11px] font-bold text-[#181a2c] leading-tight truncate max-w-[200px] sm:max-w-[400px]">{item.employee}</h4>
+                        <h4 className="text-[11px] font-bold text-[#181a2c] leading-tight truncate max-w-[200px] sm:max-w-[400px]">
+                          {item.employee}
+                        </h4>
                         <p className="text-[9px] text-[#8E94B7] mt-0.5 truncate">
-                          Area: <span className="font-semibold text-primary">{item.area}</span>
+                          Area:{" "}
+                          <span className="font-semibold text-primary">
+                            {item.area}
+                          </span>
                         </p>
                       </div>
                     </div>
 
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-bold text-emerald-600 font-sans">{item.pog.toLocaleString()} <span className="text-[9px] text-[#8E94B7] font-normal">POG</span></p>
-                      <p className="text-[8.5px] text-[#8E94B7] mt-0.5">Sisa stok: <span className="font-medium text-slate-700">{item.currentStock.toLocaleString()} Kg</span></p>
+                      <p className="text-xs font-bold text-emerald-600 font-sans">
+                        {item.pog.toLocaleString()}{" "}
+                        <span className="text-[9px] text-[#8E94B7] font-normal">
+                          POG
+                        </span>
+                      </p>
+                      <p className="text-[8.5px] text-[#8E94B7] mt-0.5">
+                        Sisa stok:{" "}
+                        <span className="font-medium text-slate-700">
+                          {item.currentStock.toLocaleString()} Kg
+                        </span>
+                      </p>
                     </div>
                   </div>
                 ))}
-                
+
                 {employeePerformanceData.highest.length === 0 && (
                   <div className="flex flex-col items-center justify-center text-center p-6">
-                    <span className="material-symbols-outlined text-[36px] text-[#8E94B7]/40 mb-2">trending_flat</span>
-                    <p className="text-xs text-[#8E94B7]">Data POG belum dimasukkan bulan ini.</p>
+                    <span className="material-symbols-outlined text-[36px] text-[#8E94B7]/40 mb-2">
+                      trending_flat
+                    </span>
+                    <p className="text-xs text-[#8E94B7]">
+                      Data POG belum dimasukkan bulan ini.
+                    </p>
                   </div>
                 )}
               </div>
@@ -5533,48 +7955,80 @@ const Dashboard = ({
             <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-rose-500 text-sm font-semibold">trending_down</span>
-                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">Top 5 Employee dengan Penjualan Terendah</h3>
+                  <span className="material-symbols-outlined text-rose-500 text-sm font-semibold">
+                    trending_down
+                  </span>
+                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">
+                    Top 5 Employee dengan Penjualan Terendah
+                  </h3>
                 </div>
-                <p className="text-[10px] text-[#8E94B7] mt-0.5">Daftar tim penjualan dengan pencapaian POG terendah saat ini</p>
+                <p className="text-[10px] text-[#8E94B7] mt-0.5">
+                  Daftar tim penjualan dengan pencapaian POG terendah saat ini
+                </p>
               </div>
 
               <div className="flex flex-col gap-3 mt-4">
                 {employeePerformanceData.lowest.map((item, index) => (
-                  <div key={item.employee} className="flex items-center justify-between p-3 rounded-xl bg-[#fbfaff] border border-[#f0effc] hover:border-[#154be2]/20 transition-all duration-200">
+                  <div
+                    key={item.employee}
+                    className="flex items-center justify-between p-3 rounded-xl bg-[#fbfaff] border border-[#f0effc] hover:border-[#154be2]/20 transition-all duration-200"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`size-8 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${
-                        index === 0 ? 'bg-rose-100 text-rose-700' :
-                        index === 1 ? 'bg-orange-50 text-orange-700 border border-orange-200' :
-                        index === 2 ? 'bg-orange-50 text-orange-600' :
-                        'bg-slate-100 text-slate-600'
-                      }`}>
+                      <div
+                        className={`size-8 shrink-0 rounded-full flex items-center justify-center font-bold text-xs ${
+                          index === 0
+                            ? "bg-rose-100 text-rose-700"
+                            : index === 1
+                              ? "bg-orange-50 text-orange-700 border border-orange-200"
+                              : index === 2
+                                ? "bg-orange-50 text-orange-600"
+                                : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
                         #{index + 1}
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-[11px] font-bold text-[#181a2c] leading-tight truncate max-w-[200px] sm:max-w-[400px]">{item.employee}</h4>
+                        <h4 className="text-[11px] font-bold text-[#181a2c] leading-tight truncate max-w-[200px] sm:max-w-[400px]">
+                          {item.employee}
+                        </h4>
                         <p className="text-[9px] text-[#8E94B7] mt-0.5 truncate">
-                          Area: <span className="font-semibold text-primary">{item.area}</span>
+                          Area:{" "}
+                          <span className="font-semibold text-primary">
+                            {item.area}
+                          </span>
                         </p>
                       </div>
                     </div>
 
                     <div className="text-right shrink-0">
-                      <p className="text-xs font-bold text-rose-600 font-sans">{item.pog.toLocaleString()} <span className="text-[9px] text-[#8E94B7] font-normal">POG</span></p>
-                      <p className="text-[8.5px] text-[#8E94B7] mt-0.5">Sisa stok: <span className="font-medium text-slate-700">{item.currentStock.toLocaleString()} Kg</span></p>
+                      <p className="text-xs font-bold text-rose-600 font-sans">
+                        {item.pog.toLocaleString()}{" "}
+                        <span className="text-[9px] text-[#8E94B7] font-normal">
+                          POG
+                        </span>
+                      </p>
+                      <p className="text-[8.5px] text-[#8E94B7] mt-0.5">
+                        Sisa stok:{" "}
+                        <span className="font-medium text-slate-700">
+                          {item.currentStock.toLocaleString()} Kg
+                        </span>
+                      </p>
                     </div>
                   </div>
                 ))}
-                
+
                 {employeePerformanceData.lowest.length === 0 && (
                   <div className="flex flex-col items-center justify-center text-center p-6">
-                    <span className="material-symbols-outlined text-[36px] text-[#8E94B7]/40 mb-2">trending_flat</span>
-                    <p className="text-xs text-[#8E94B7]">Data POG belum dimasukkan bulan ini.</p>
+                    <span className="material-symbols-outlined text-[36px] text-[#8E94B7]/40 mb-2">
+                      trending_flat
+                    </span>
+                    <p className="text-xs text-[#8E94B7]">
+                      Data POG belum dimasukkan bulan ini.
+                    </p>
                   </div>
                 )}
               </div>
             </div>
-
           </div>
 
           {/* Section: History Bulanan */}
@@ -5582,62 +8036,67 @@ const Dashboard = ({
             <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 pb-4 border-b border-[#f0effc]/60 gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-sm font-semibold border-b border-primary/20 pb-0.5">timeline</span>
-                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">Tren Perkembangan Data (History Bulanan)</h3>
+                  <span className="material-symbols-outlined text-primary text-sm font-semibold border-b border-primary/20 pb-0.5">
+                    timeline
+                  </span>
+                  <h3 className="text-xs font-bold text-[#181a2c] tracking-tight">
+                    Tren Perkembangan Data (History Bulanan)
+                  </h3>
                 </div>
                 <p className="text-[10px] text-[#8E94B7] mt-0.5">
-                  Analisis perbandingan histori total volume perkembangan data dari bulan ke bulan
+                  Analisis perbandingan histori total volume perkembangan data
+                  dari bulan ke bulan
                 </p>
               </div>
 
               {/* Toggle switch for history display options matching requested Opening Inv, Ending Inv, Stock In, Idle Stock, POG */}
               <div className="flex flex-wrap items-center gap-1.5 self-start md:self-auto">
                 <button
-                  onClick={() => setHistoryChartType('opening')}
+                  onClick={() => setHistoryChartType("opening")}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    historyChartType === 'opening'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40'
+                    historyChartType === "opening"
+                      ? "bg-indigo-600 text-white shadow-md"
+                      : "bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40"
                   }`}
                 >
                   Opening Inv
                 </button>
                 <button
-                  onClick={() => setHistoryChartType('ending')}
+                  onClick={() => setHistoryChartType("ending")}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    historyChartType === 'ending'
-                      ? 'bg-purple-600 text-white shadow-md'
-                      : 'bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40'
+                    historyChartType === "ending"
+                      ? "bg-purple-600 text-white shadow-md"
+                      : "bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40"
                   }`}
                 >
                   Ending Inv
                 </button>
                 <button
-                  onClick={() => setHistoryChartType('stockIn')}
+                  onClick={() => setHistoryChartType("stockIn")}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    historyChartType === 'stockIn'
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40'
+                    historyChartType === "stockIn"
+                      ? "bg-emerald-600 text-white shadow-md"
+                      : "bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40"
                   }`}
                 >
                   Stock In
                 </button>
                 <button
-                  onClick={() => setHistoryChartType('idle')}
+                  onClick={() => setHistoryChartType("idle")}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    historyChartType === 'idle'
-                      ? 'bg-amber-600 text-white shadow-md'
-                      : 'bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40'
+                    historyChartType === "idle"
+                      ? "bg-amber-600 text-white shadow-md"
+                      : "bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40"
                   }`}
                 >
                   Idle Stock
                 </button>
                 <button
-                  onClick={() => setHistoryChartType('pog')}
+                  onClick={() => setHistoryChartType("pog")}
                   className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
-                    historyChartType === 'pog'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40'
+                    historyChartType === "pog"
+                      ? "bg-blue-600 text-white shadow-md"
+                      : "bg-[#fbfaff] text-[#8E94B7] hover:bg-slate-100 border border-slate-100/40"
                   }`}
                 >
                   POG
@@ -5649,34 +8108,57 @@ const Dashboard = ({
             {overviewHistoryData && overviewHistoryData.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 bg-[#fbfaff] p-4 rounded-2xl border border-slate-100">
                 <div className="flex flex-col">
-                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">Rata-rata POG Bulanan</span>
+                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Rata-rata POG Bulanan
+                  </span>
                   <span className="text-sm font-bold text-blue-600 mt-1">
                     {Math.round(
-                      overviewHistoryData.reduce((acc, curr) => acc + curr.pog, 0) / overviewHistoryData.length
-                    ).toLocaleString()}{' '}
-                    <span className="text-[10px] font-medium text-slate-400">Kg</span>
+                      overviewHistoryData.reduce(
+                        (acc, curr) => acc + curr.pog,
+                        0,
+                      ) / overviewHistoryData.length,
+                    ).toLocaleString()}{" "}
+                    <span className="text-[10px] font-medium text-slate-400">
+                      Kg
+                    </span>
                   </span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">Total Penyerapan POG</span>
+                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Total Penyerapan POG
+                  </span>
                   <span className="text-sm font-bold text-indigo-600 mt-1">
-                    {overviewHistoryData.reduce((acc, curr) => acc + curr.pog, 0).toLocaleString()}{' '}
-                    <span className="text-[10px] font-medium text-slate-400">Kg</span>
+                    {overviewHistoryData
+                      .reduce((acc, curr) => acc + curr.pog, 0)
+                      .toLocaleString()}{" "}
+                    <span className="text-[10px] font-medium text-slate-400">
+                      Kg
+                    </span>
                   </span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">Mutasi Maksimal Stok</span>
+                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Mutasi Maksimal Stok
+                  </span>
                   <span className="text-sm font-bold text-teal-600 mt-1">
-                    {Math.max(...overviewHistoryData.map(d => d.ending)).toLocaleString()}{' '}
-                    <span className="text-[10px] font-medium text-slate-400">Kg</span>
+                    {Math.max(
+                      ...overviewHistoryData.map((d) => d.ending),
+                    ).toLocaleString()}{" "}
+                    <span className="text-[10px] font-medium text-slate-400">
+                      Kg
+                    </span>
                   </span>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">Bulan Teraktif</span>
+                  <span className="text-[9px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                    Bulan Teraktif
+                  </span>
                   <span className="text-sm font-bold text-amber-600 mt-1 truncate">
                     {(() => {
-                      const maxPogObj = [...overviewHistoryData].sort((a, b) => b.pog - a.pog)[0];
-                      return maxPogObj ? maxPogObj.monthLabel : '-';
+                      const maxPogObj = [...overviewHistoryData].sort(
+                        (a, b) => b.pog - a.pog,
+                      )[0];
+                      return maxPogObj ? maxPogObj.monthLabel : "-";
                     })()}
                   </span>
                 </div>
@@ -5685,149 +8167,321 @@ const Dashboard = ({
 
             <div className="h-64 w-full font-sans">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={overviewHistoryData} margin={{ top: 25, right: 15, left: -15, bottom: 5 }}>
+                <AreaChart
+                  data={overviewHistoryData}
+                  margin={{ top: 25, right: 15, left: -15, bottom: 5 }}
+                >
                   <defs>
-                    <linearGradient id="historyColorOpening" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.0}/>
+                    <linearGradient
+                      id="historyColorOpening"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#4f46e5"
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#4f46e5"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
-                    <linearGradient id="historyColorEnding" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#a855f7" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#a855f7" stopOpacity={0.0}/>
+                    <linearGradient
+                      id="historyColorEnding"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#a855f7"
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#a855f7"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
-                    <linearGradient id="historyColorStockIn" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0.0}/>
+                    <linearGradient
+                      id="historyColorStockIn"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#10b981"
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#10b981"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
-                    <linearGradient id="historyColorIdle" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0.0}/>
+                    <linearGradient
+                      id="historyColorIdle"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#f59e0b"
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#f59e0b"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
-                    <linearGradient id="historyColorPog" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0}/>
+                    <linearGradient
+                      id="historyColorPog"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#2563eb"
+                        stopOpacity={0.25}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#2563eb"
+                        stopOpacity={0.0}
+                      />
                     </linearGradient>
                   </defs>
-                  
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="monthLabel" tick={{ fill: '#4e5572', fontSize: 8.5, fontWeight: 700 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#8E94B7', fontSize: 9, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                  
-                  <Tooltip 
-                    cursor={{ stroke: '#154be2', strokeWidth: 1, strokeDasharray: '4 4' }}
-                    contentStyle={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #e1e7ff', boxShadow: '0 10px 30px rgba(0,0,0,0.06)' }}
-                    labelStyle={{ fontSize: '11px', fontWeight: 'bold', color: '#181a2c' }}
-                    itemStyle={{ fontSize: '10px', padding: '1px 0' }}
+
+                  <CartesianGrid
+                    strokeDasharray="4 4"
+                    vertical={false}
+                    stroke="#e2e8f0"
                   />
-                  
-                  <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', marginTop: '10px' }} />
+                  <XAxis
+                    dataKey="monthLabel"
+                    tick={{ fill: "#4e5572", fontSize: 8.5, fontWeight: 700 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: "#8E94B7", fontSize: 9, fontWeight: 500 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
 
-                  {(historyChartType === 'opening') && (
-                    <Area 
-                      type="monotone" 
-                      dataKey="opening" 
-                      name="Opening Inv (Kg)" 
-                      stroke="#4f46e5" 
-                      strokeWidth={2.5} 
-                      fillOpacity={1} 
-                      fill="url(#historyColorOpening)" 
-                      dot={{ r: 4, strokeWidth: 2, stroke: "#4f46e5", fill: "#ffffff" }}
+                  <Tooltip
+                    cursor={{
+                      stroke: "#154be2",
+                      strokeWidth: 1,
+                      strokeDasharray: "4 4",
+                    }}
+                    contentStyle={{
+                      backgroundColor: "white",
+                      borderRadius: "16px",
+                      border: "1px solid #e1e7ff",
+                      boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+                    }}
+                    labelStyle={{
+                      fontSize: "11px",
+                      fontWeight: "bold",
+                      color: "#181a2c",
+                    }}
+                    itemStyle={{ fontSize: "10px", padding: "1px 0" }}
+                  />
+
+                  <Legend
+                    iconSize={10}
+                    iconType="circle"
+                    wrapperStyle={{
+                      fontSize: "10px",
+                      fontWeight: "bold",
+                      marginTop: "10px",
+                    }}
+                  />
+
+                  {historyChartType === "opening" && (
+                    <Area
+                      type="monotone"
+                      dataKey="opening"
+                      name="Opening Inv (Kg)"
+                      stroke="#4f46e5"
+                      strokeWidth={2.5}
+                      fillOpacity={1}
+                      fill="url(#historyColorOpening)"
+                      dot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#4f46e5",
+                        fill: "#ffffff",
+                      }}
                       activeDot={{ r: 6, strokeWidth: 1 }}
                     >
-                      <LabelList 
-                        dataKey="opening" 
-                        position="top" 
-                        offset={10} 
-                        style={{ fontSize: 9, fontWeight: 700, fill: "#4f46e5" }} 
-                        formatter={(value: any) => value ? Math.round(Number(value)).toLocaleString() : '0'} 
+                      <LabelList
+                        dataKey="opening"
+                        position="top"
+                        offset={10}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fill: "#4f46e5",
+                        }}
+                        formatter={(value: any) =>
+                          value
+                            ? Math.round(Number(value)).toLocaleString()
+                            : "0"
+                        }
                       />
                     </Area>
                   )}
 
-                  {(historyChartType === 'ending') && (
-                    <Area 
-                      type="monotone" 
-                      dataKey="ending" 
-                      name="Ending Inv (Kg)" 
-                      stroke="#a855f7" 
-                      strokeWidth={2} 
-                      fillOpacity={1} 
-                      fill="url(#historyColorEnding)" 
-                      dot={{ r: 4, strokeWidth: 2, stroke: "#a855f7", fill: "#ffffff" }}
+                  {historyChartType === "ending" && (
+                    <Area
+                      type="monotone"
+                      dataKey="ending"
+                      name="Ending Inv (Kg)"
+                      stroke="#a855f7"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#historyColorEnding)"
+                      dot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#a855f7",
+                        fill: "#ffffff",
+                      }}
                       activeDot={{ r: 6, strokeWidth: 1 }}
                     >
-                      <LabelList 
-                        dataKey="ending" 
-                        position="top" 
-                        offset={10} 
-                        style={{ fontSize: 9, fontWeight: 700, fill: "#a855f7" }} 
-                        formatter={(value: any) => value ? Math.round(Number(value)).toLocaleString() : '0'} 
+                      <LabelList
+                        dataKey="ending"
+                        position="top"
+                        offset={10}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fill: "#a855f7",
+                        }}
+                        formatter={(value: any) =>
+                          value
+                            ? Math.round(Number(value)).toLocaleString()
+                            : "0"
+                        }
                       />
                     </Area>
                   )}
 
-                  {(historyChartType === 'stockIn') && (
-                    <Area 
-                      type="monotone" 
-                      dataKey="stockIn" 
-                      name="Stock In (Kg)" 
-                      stroke="#10b981" 
-                      strokeWidth={1.5} 
-                      fillOpacity={1} 
-                      fill="url(#historyColorStockIn)" 
-                      dot={{ r: 4, strokeWidth: 2, stroke: "#10b981", fill: "#ffffff" }}
+                  {historyChartType === "stockIn" && (
+                    <Area
+                      type="monotone"
+                      dataKey="stockIn"
+                      name="Stock In (Kg)"
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      fillOpacity={1}
+                      fill="url(#historyColorStockIn)"
+                      dot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#10b981",
+                        fill: "#ffffff",
+                      }}
                       activeDot={{ r: 6, strokeWidth: 1 }}
                     >
-                      <LabelList 
-                        dataKey="stockIn" 
-                        position="top" 
-                        offset={10} 
-                        style={{ fontSize: 9, fontWeight: 700, fill: "#10b981" }} 
-                        formatter={(value: any) => value ? Math.round(Number(value)).toLocaleString() : '0'} 
+                      <LabelList
+                        dataKey="stockIn"
+                        position="top"
+                        offset={10}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fill: "#10b981",
+                        }}
+                        formatter={(value: any) =>
+                          value
+                            ? Math.round(Number(value)).toLocaleString()
+                            : "0"
+                        }
                       />
                     </Area>
                   )}
 
-                  {(historyChartType === 'idle') && (
-                    <Area 
-                      type="monotone" 
-                      dataKey="idle" 
-                      name="Idle Stock (Kg)" 
-                      stroke="#f59e0b" 
-                      strokeWidth={1.5} 
-                      fillOpacity={1} 
-                      fill="url(#historyColorIdle)" 
-                      dot={{ r: 4, strokeWidth: 2, stroke: "#f59e0b", fill: "#ffffff" }}
+                  {historyChartType === "idle" && (
+                    <Area
+                      type="monotone"
+                      dataKey="idle"
+                      name="Idle Stock (Kg)"
+                      stroke="#f59e0b"
+                      strokeWidth={1.5}
+                      fillOpacity={1}
+                      fill="url(#historyColorIdle)"
+                      dot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#f59e0b",
+                        fill: "#ffffff",
+                      }}
                       activeDot={{ r: 6, strokeWidth: 1 }}
                     >
-                      <LabelList 
-                        dataKey="idle" 
-                        position="top" 
-                        offset={10} 
-                        style={{ fontSize: 9, fontWeight: 700, fill: "#f59e0b" }} 
-                        formatter={(value: any) => value ? Math.round(Number(value)).toLocaleString() : '0'} 
+                      <LabelList
+                        dataKey="idle"
+                        position="top"
+                        offset={10}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fill: "#f59e0b",
+                        }}
+                        formatter={(value: any) =>
+                          value
+                            ? Math.round(Number(value)).toLocaleString()
+                            : "0"
+                        }
                       />
                     </Area>
                   )}
 
-                  {(historyChartType === 'pog') && (
-                    <Area 
-                      type="monotone" 
-                      dataKey="pog" 
-                      name="POG (Kg)" 
-                      stroke="#2563eb" 
-                      strokeWidth={2} 
-                      fillOpacity={1} 
-                      fill="url(#historyColorPog)" 
-                      dot={{ r: 4, strokeWidth: 2, stroke: "#2563eb", fill: "#ffffff" }}
+                  {historyChartType === "pog" && (
+                    <Area
+                      type="monotone"
+                      dataKey="pog"
+                      name="POG (Kg)"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#historyColorPog)"
+                      dot={{
+                        r: 4,
+                        strokeWidth: 2,
+                        stroke: "#2563eb",
+                        fill: "#ffffff",
+                      }}
                       activeDot={{ r: 6, strokeWidth: 1 }}
                     >
-                      <LabelList 
-                        dataKey="pog" 
-                        position="top" 
-                        offset={10} 
-                        style={{ fontSize: 9, fontWeight: 700, fill: "#2563eb" }} 
-                        formatter={(value: any) => value ? Math.round(Number(value)).toLocaleString() : '0'} 
+                      <LabelList
+                        dataKey="pog"
+                        position="top"
+                        offset={10}
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 700,
+                          fill: "#2563eb",
+                        }}
+                        formatter={(value: any) =>
+                          value
+                            ? Math.round(Number(value)).toLocaleString()
+                            : "0"
+                        }
                       />
                     </Area>
                   )}
@@ -5835,36 +8489,69 @@ const Dashboard = ({
               </ResponsiveContainer>
             </div>
           </div>
-
         </div>
       )}
 
-      {activeTab === 'home' && (
+      {activeTab === "home" && (
         <div className="animate-in fade-in slide-in-from-left-4 duration-300">
           {isBusinessAnalyst ? (
             <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.12)] border border-[#edecff] text-center max-w-md mx-auto my-12">
-              <span className="material-symbols-outlined text-[48px] text-primary/40 mb-3">analytics</span>
-              <h2 className="text-base font-semibold text-[#181a2c] mb-1.5">Akses Analis Bisnis</h2>
+              <span className="material-symbols-outlined text-[48px] text-primary/40 mb-3">
+                analytics
+              </span>
+              <h2 className="text-base font-semibold text-[#181a2c] mb-1.5">
+                Akses Analis Bisnis
+              </h2>
               <p className="text-xs text-[#8E94B7] leading-relaxed">
-                Sebagai Business Analyst, Anda tidak perlu menginput stok secara manual untuk masing-masing Toko/Channel Partner melainkan memantau visualisasi, performa, dan ringkasan data. Silakan buka tab <strong className="text-primary font-medium">Stock</strong> atau <strong className="text-primary font-medium">POG</strong>.
+                Sebagai Business Analyst, Anda tidak perlu menginput stok secara
+                manual untuk masing-masing Toko/Channel Partner melainkan
+                memantau visualisasi, performa, dan ringkasan data. Silakan buka
+                tab <strong className="text-primary font-medium">Stock</strong>{" "}
+                atau <strong className="text-primary font-medium">POG</strong>.
               </p>
             </div>
           ) : (
             <>
               <div className="mb-4 ml-1">
-                <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">Channel <span className="text-primary font-bold">Partner</span></h1>
+                <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+                  Channel{" "}
+                  <span className="text-primary font-bold">Partner</span>
+                </h1>
               </div>
               <div className="relative mb-8" ref={dropdownRef}>
-                <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center justify-between w-full px-6 py-4 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full shadow-[0_12px_32px_rgba(21,75,226,0.25)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.35)] hover:scale-[1.01] active:scale-[0.99] transition-all relative z-30">
-                  <span className="font-semibold text-sm truncate">{selectedKiosk}</span>
-                  <span className="material-symbols-outlined text-white/80">unfold_more</span>
+                <button
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  className="flex items-center justify-between w-full px-6 py-4 bg-gradient-to-r from-primary to-cyan-400 text-white rounded-full shadow-[0_12px_32px_rgba(21,75,226,0.25)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.35)] hover:scale-[1.01] active:scale-[0.99] transition-all relative z-30"
+                >
+                  <span className="font-semibold text-sm truncate">
+                    {selectedKiosk}
+                  </span>
+                  <span className="material-symbols-outlined text-white/80">
+                    unfold_more
+                  </span>
                 </button>
                 {isDropdownOpen && (
                   <div className="absolute left-0 right-0 mt-2 bg-white/95 backdrop-blur-md shadow-[0_12px_32px_rgba(21,75,226,0.15)] z-[100] rounded-[24px] p-4 animate-in fade-in slide-in-from-top-4">
-                    <input type="text" placeholder="Search channel..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full h-11 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] rounded-full px-5 text-xs font-semibold outline-none focus:ring-1 focus:ring-primary/20 mb-3" />
+                    <input
+                      type="text"
+                      placeholder="Search channel..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full h-11 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] rounded-full px-5 text-xs font-semibold outline-none focus:ring-1 focus:ring-primary/20 mb-3"
+                    />
                     <div className="max-h-[200px] overflow-y-auto custom-scrollbar space-y-1">
                       {filteredKiosks.map((k, i) => (
-                        <button key={i} onClick={() => { setSelectedKiosk(k.name); setIsDropdownOpen(false); setSearchTerm(''); }} className={`w-full text-left px-5 py-2.5 rounded-full font-semibold text-[11px] uppercase transition-all ${selectedKiosk === k.name ? 'bg-[#edecff] text-primary' : 'text-[#635b6e] hover:bg-[#fbf8ff]'}`}>{k.name}</button>
+                        <button
+                          key={i}
+                          onClick={() => {
+                            setSelectedKiosk(k.name);
+                            setIsDropdownOpen(false);
+                            setSearchTerm("");
+                          }}
+                          className={`w-full text-left px-5 py-2.5 rounded-full font-semibold text-[11px] uppercase transition-all ${selectedKiosk === k.name ? "bg-[#edecff] text-primary" : "text-[#635b6e] hover:bg-[#fbf8ff]"}`}
+                        >
+                          {k.name}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -5872,7 +8559,9 @@ const Dashboard = ({
               </div>
 
               <div className="mb-4 ml-1">
-                <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">Tambah <span className="text-primary font-bold">LOT</span></h1>
+                <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+                  Tambah <span className="text-primary font-bold">LOT</span>
+                </h1>
               </div>
               <div className="bg-white p-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.15)] mb-6">
                 <div className="space-y-4">
@@ -5882,364 +8571,574 @@ const Dashboard = ({
                         type="button"
                         onClick={() => !isLotChecking && setIsScannerOpen(true)}
                         className={`absolute left-3 top-1/2 -translate-y-1/2 size-9 rounded-full flex items-center justify-center transition-all z-20 ${
-                          isLotChecking ? 'cursor-not-allowed text-primary animate-spin' : 'cursor-pointer hover:bg-[#f4f2ff] text-primary active:scale-[0.93]'
+                          isLotChecking
+                            ? "cursor-not-allowed text-primary animate-spin"
+                            : "cursor-pointer hover:bg-[#f4f2ff] text-primary active:scale-[0.93]"
                         }`}
                         title="Scan QR / Barcode"
                       >
                         <span className="material-symbols-outlined text-lg leading-none">
-                          {isLotChecking ? 'sync' : 'photo_camera'}
+                          {isLotChecking ? "sync" : "photo_camera"}
                         </span>
                       </button>
-                      <input value={lotNo} onChange={e => setLotNo(e.target.value)} className="w-full h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full pl-14 pr-6 font-semibold text-xs outline-none focus:ring-1 focus:ring-primary/20 transition-all" placeholder="Batch / Lot No" />
+                      <input
+                        value={lotNo}
+                        onChange={(e) => setLotNo(e.target.value)}
+                        className="w-full h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full pl-14 pr-6 font-semibold text-xs outline-none focus:ring-1 focus:ring-primary/20 transition-all"
+                        placeholder="Batch / Lot No"
+                      />
                     </div>
-                    <input value={qty} onChange={e => setQty(e.target.value)} className="col-span-2 h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-6 font-semibold text-xs outline-none focus:ring-1 focus:ring-primary/20 transition-all" placeholder="Qty (Kg)" type="number" />
+                    <input
+                      value={qty}
+                      onChange={(e) => setQty(e.target.value)}
+                      className="col-span-2 h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-6 font-semibold text-xs outline-none focus:ring-1 focus:ring-primary/20 transition-all"
+                      placeholder="Qty (Kg)"
+                      type="number"
+                    />
                   </div>
-                  
+
                   {isLotChecking && (
                     <div className="bg-[#f0f3ff] border border-[#dce2ff] p-3.5 rounded-[18px] flex items-center gap-2.5 animate-pulse shadow-sm">
-                      <span className="material-symbols-outlined text-primary text-lg animate-spin">sync</span>
-                      <p className="text-xs font-semibold text-primary">Mengecek LOT di database...</p>
+                      <span className="material-symbols-outlined text-primary text-lg animate-spin">
+                        sync
+                      </span>
+                      <p className="text-xs font-semibold text-primary">
+                        Mengecek LOT di database...
+                      </p>
                     </div>
                   )}
 
-                  {!isLotChecking && lotIntel && typeof lotIntel === 'object' && (
-                    <div className="space-y-2">
-                      <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-[18px] flex items-center gap-2.5 animate-in slide-in-from-top-2 shadow-sm">
-                        <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
-                        <p className="text-xs font-semibold text-emerald-800">✅ LOT ditemukan di database!</p>
-                      </div>
-                      <div className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] p-4 rounded-[20px] animate-in slide-in-from-top-2">
-                        <div className="mb-3">
-                           <p className="text-[8.5px] font-bold text-[#8E94B7] uppercase tracking-wider mb-0.5">Hybrid Description</p>
-                           <p className="text-xs font-semibold text-[#181a2c] leading-snug">{lotIntel.desc}</p>
+                  {!isLotChecking &&
+                    lotIntel &&
+                    typeof lotIntel === "object" && (
+                      <div className="space-y-2">
+                        <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-[18px] flex items-center gap-2.5 animate-in slide-in-from-top-2 shadow-sm">
+                          <span className="material-symbols-outlined text-emerald-500 text-lg">
+                            check_circle
+                          </span>
+                          <p className="text-xs font-semibold text-emerald-800">
+                            ✅ LOT ditemukan di database!
+                          </p>
                         </div>
-                        <div className="flex items-center gap-4 border-t border-[#edecff] pt-3">
-                           <div className="flex-1">
-                              <p className="text-[8.5px] font-bold text-[#8E94B7] uppercase tracking-wider mb-0.5">Dr Date</p>
-                              <p className="text-[10px] font-semibold text-[#181a2c]">{lotIntel.drDate}</p>
-                           </div>
-                           <div className="w-px h-6 bg-[#edecff]" />
-                           <div className="flex-1">
-                              <p className="text-[8.5px] font-bold text-red-400 uppercase tracking-wider mb-0.5">Exp Date</p>
-                              <p className="text-[10px] font-bold text-red-700">{lotIntel.expDate}</p>
-                           </div>
+                        <div className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] p-4 rounded-[20px] animate-in slide-in-from-top-2">
+                          <div className="mb-3">
+                            <p className="text-[8.5px] font-bold text-[#8E94B7] uppercase tracking-wider mb-0.5">
+                              Hybrid Description
+                            </p>
+                            <p className="text-xs font-semibold text-[#181a2c] leading-snug">
+                              {lotIntel.desc}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-4 border-t border-[#edecff] pt-3">
+                            <div className="flex-1">
+                              <p className="text-[8.5px] font-bold text-[#8E94B7] uppercase tracking-wider mb-0.5">
+                                Dr Date
+                              </p>
+                              <p className="text-[10px] font-semibold text-[#181a2c]">
+                                {lotIntel.drDate}
+                              </p>
+                            </div>
+                            <div className="w-px h-6 bg-[#edecff]" />
+                            <div className="flex-1">
+                              <p className="text-[8.5px] font-bold text-red-400 uppercase tracking-wider mb-0.5">
+                                Exp Date
+                              </p>
+                              <p className="text-[10px] font-bold text-red-700">
+                                {lotIntel.expDate}
+                              </p>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {!isLotChecking && lotIntel && typeof lotIntel === 'string' && (
-                    <div className="space-y-2">
-                      <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-[18px] flex items-center gap-2.5 animate-in slide-in-from-top-2 shadow-sm">
-                        <span className="material-symbols-outlined text-emerald-500 text-lg">check_circle</span>
-                        <p className="text-xs font-semibold text-emerald-800">✅ LOT ditemukan di database!</p>
+                  {!isLotChecking &&
+                    lotIntel &&
+                    typeof lotIntel === "string" && (
+                      <div className="space-y-2">
+                        <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-[18px] flex items-center gap-2.5 animate-in slide-in-from-top-2 shadow-sm">
+                          <span className="material-symbols-outlined text-emerald-500 text-lg">
+                            check_circle
+                          </span>
+                          <p className="text-xs font-semibold text-emerald-800">
+                            ✅ LOT ditemukan di database!
+                          </p>
+                        </div>
+                        <div className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] p-4 rounded-[18px] animate-in slide-in-from-top-2">
+                          <p className="text-[8.5px] font-bold text-primary uppercase mb-0.5">
+                            Lot Metadata Note
+                          </p>
+                          <p className="text-xs font-semibold text-[#181a2c]">
+                            {lotIntel}
+                          </p>
+                        </div>
                       </div>
-                      <div className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] p-4 rounded-[18px] animate-in slide-in-from-top-2">
-                        <p className="text-[8.5px] font-bold text-primary uppercase mb-0.5">Lot Metadata Note</p>
-                        <p className="text-xs font-semibold text-[#181a2c]">{lotIntel}</p>
-                      </div>
-                    </div>
-                  )}
+                    )}
 
                   {!isLotChecking && isLotNotFound && (
                     <div className="bg-red-50/90 border border-red-100 p-3.5 rounded-[18px] flex items-center gap-2.5 animate-in slide-in-from-top-2 shadow-sm">
-                      <span className="material-symbols-outlined text-red-500 text-lg flex-shrink-0">warning</span>
+                      <span className="material-symbols-outlined text-red-500 text-lg flex-shrink-0">
+                        warning
+                      </span>
                       <div className="flex flex-col">
-                        <p className="text-xs font-bold text-red-700 leading-tight">⚠️ Peringatan: LOT tidak ditemukan!</p>
-                        <p className="text-[10px] text-red-600/90 mt-0.5 font-medium">Periksa kembali nomor Batch/Lot Anda untuk menghindari kesalahan pengisian data.</p>
+                        <p className="text-xs font-bold text-red-700 leading-tight">
+                          ⚠️ Peringatan: LOT tidak ditemukan!
+                        </p>
+                        <p className="text-[10px] text-red-600/90 mt-0.5 font-medium">
+                          Periksa kembali nomor Batch/Lot Anda untuk menghindari
+                          kesalahan pengisian data.
+                        </p>
                       </div>
                     </div>
                   )}
 
-                  <button onClick={handleAddLocal} disabled={!lotNo || !qty} className={`w-full h-14 rounded-full font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${!lotNo || !qty ? 'bg-[#e0e0fa] text-[#8E94B7] shadow-none cursor-not-allowed' : 'bg-gradient-to-r from-emerald-500 to-[#00D2FF] text-white shadow-[0_8px_20px_rgba(16,185,129,0.2)] hover:opacity-95'}`}>
-                    <span className="material-symbols-outlined text-[18px]">add_box</span> Tambah ke List
+                  <button
+                    onClick={handleAddLocal}
+                    disabled={!lotNo || !qty}
+                    className={`w-full h-14 rounded-full font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${!lotNo || !qty ? "bg-[#e0e0fa] text-[#8E94B7] shadow-none cursor-not-allowed" : "bg-gradient-to-r from-emerald-500 to-[#00D2FF] text-white shadow-[0_8px_20px_rgba(16,185,129,0.2)] hover:opacity-95"}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      add_box
+                    </span>{" "}
+                    Tambah ke List
                   </button>
                 </div>
               </div>
 
-              <DetailItemSection 
-                items={workingData.filter(item => item.kiosk === selectedKiosk)} 
+              <DetailItemSection
+                items={workingData.filter(
+                  (item) => item.kiosk === selectedKiosk,
+                )}
                 onEdit={(item) => setEditModal({ isOpen: true, item })}
                 onDelete={(item) => setDeleteModal({ isOpen: true, item })}
-                onUploadActivity={handleUploadActivity} 
+                onUploadActivity={handleUploadActivity}
                 isSyncing={isSyncing}
                 hasChanges={hasChanges}
                 title="Existing Stock"
                 subtitle={selectedKiosk}
-                category={kiosks.find(k => cleanForMatch(k.name) === cleanForMatch(selectedKiosk))?.category || 'Uncategorized'}
+                category={
+                  kiosks.find(
+                    (k) =>
+                      cleanForMatch(k.name) === cleanForMatch(selectedKiosk),
+                  )?.category || "Uncategorized"
+                }
               />
 
-              <EditModal isOpen={editModal.isOpen} item={editModal.item} onClose={() => setEditModal({ isOpen: false, item: null })} onSave={handleEditLocal} isSaving={isActionLoading} />
-              <ConfirmModal isOpen={deleteModal.isOpen} onClose={() => setDeleteModal({ isOpen: false, item: null })} onConfirm={handleDeleteLocal} isProcessing={isActionLoading} />
-              <QrScanModal isOpen={isScannerOpen} onClose={() => setIsScannerOpen(false)} onScanSuccess={(val) => setLotNo(val)} />
+              <EditModal
+                isOpen={editModal.isOpen}
+                item={editModal.item}
+                onClose={() => setEditModal({ isOpen: false, item: null })}
+                onSave={handleEditLocal}
+                isSaving={isActionLoading}
+              />
+              <ConfirmModal
+                isOpen={deleteModal.isOpen}
+                onClose={() => setDeleteModal({ isOpen: false, item: null })}
+                onConfirm={handleDeleteLocal}
+                isProcessing={isActionLoading}
+              />
+              <QrScanModal
+                isOpen={isScannerOpen}
+                onClose={() => setIsScannerOpen(false)}
+                onScanSuccess={(val) => setLotNo(val)}
+              />
             </>
           )}
         </div>
       )}
 
-      {activeTab === 'partner' && (
+      {activeTab === "partner" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
           <div className="mb-6 ml-1 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">Mapping <span className="text-primary font-bold">Partner</span></h1>
-              <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mt-0.5">Kelola Channel Area & Tim</p>
+              <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+                Mapping <span className="text-primary font-bold">Partner</span>
+              </h1>
+              <p className="text-[11px] text-[#8E94B7] font-semibold uppercase tracking-wider mt-0.5">
+                Kelola Channel Area & Tim
+              </p>
             </div>
-            
+
             {/* Sub-navigation Menu */}
             {userLevel !== 1 && (
               <div className="flex gap-1 p-1 bg-[#edecff]/45 rounded-full w-full md:w-auto max-w-xs md:max-w-none border border-[#edecff]/60 shadow-[inset_0_1px_2px_rgba(21,75,226,0.03)] shrink-0 self-start md:self-auto">
                 <button
-                  onClick={() => setPartnerSubTab('team')}
+                  onClick={() => setPartnerSubTab("team")}
                   className={`flex-1 md:flex-initial px-4 py-1.5 rounded-full font-bold text-[9.5px] uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                    partnerSubTab === 'team'
-                      ? 'bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_10px_rgba(21,75,226,0.18)]'
-                      : 'text-[#8E94B7] hover:bg-white/50 hover:text-[#181a2c]'
+                    partnerSubTab === "team"
+                      ? "bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_10px_rgba(21,75,226,0.18)]"
+                      : "text-[#8E94B7] hover:bg-white/50 hover:text-[#181a2c]"
                   }`}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <span className="material-symbols-outlined text-[13px] leading-none">groups</span>
+                    <span className="material-symbols-outlined text-[13px] leading-none">
+                      groups
+                    </span>
                     <span>Tim & Hirarki</span>
                   </div>
                 </button>
                 <button
-                  onClick={() => setPartnerSubTab('channel')}
+                  onClick={() => setPartnerSubTab("channel")}
                   className={`flex-1 md:flex-initial px-4 py-1.5 rounded-full font-bold text-[9.5px] uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                    partnerSubTab === 'channel'
-                      ? 'bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_10px_rgba(21,75,226,0.18)]'
-                      : 'text-[#8E94B7] hover:bg-white/50 hover:text-[#181a2c]'
+                    partnerSubTab === "channel"
+                      ? "bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_10px_rgba(21,75,226,0.18)]"
+                      : "text-[#8E94B7] hover:bg-white/50 hover:text-[#181a2c]"
                   }`}
                 >
                   <div className="flex items-center justify-center gap-1.5">
-                    <span className="material-symbols-outlined text-[13px] leading-none">storefront</span>
+                    <span className="material-symbols-outlined text-[13px] leading-none">
+                      storefront
+                    </span>
                     <span>Mapping Channel</span>
                   </div>
                 </button>
               </div>
             )}
           </div>
- 
-          {partnerSubTab === 'team' && userLevel !== 1 && (() => {
-            const getDirectSubordinates = (parentName: string) => {
-              return teamMembers.filter(member => {
-                if (matchNames(member, parentName)) return false;
-                if (matchNames(member, userData.name)) return false;
 
-                const mPos = normalizePosition(getFromRecord<string>(teamPositions, member) || '');
-                if (mPos === 'Unknown') return false;
+          {partnerSubTab === "team" &&
+            userLevel !== 1 &&
+            (() => {
+              const getDirectSubordinates = (parentName: string) => {
+                return teamMembers.filter((member) => {
+                  if (matchNames(member, parentName)) return false;
+                  if (matchNames(member, userData.name)) return false;
 
-                const uplineResolved = getUplineInTeam(member, teamMembers, teamUpLines);
-                return uplineResolved !== null && matchNames(uplineResolved, parentName);
-              });
-            };
+                  const mPos = normalizePosition(
+                    getFromRecord<string>(teamPositions, member) || "",
+                  );
+                  if (mPos === "Unknown") return false;
 
-            const renderRecursiveTeamNode = (parentName: string, depth = 1): React.ReactNode => {
-              const directSubordinates = getDirectSubordinates(parentName);
-              if (directSubordinates.length === 0) return null;
+                  const uplineResolved = getUplineInTeam(
+                    member,
+                    teamMembers,
+                    teamUpLines,
+                  );
+                  return (
+                    uplineResolved !== null &&
+                    matchNames(uplineResolved, parentName)
+                  );
+                });
+              };
 
-              return (
-                <div className="space-y-4">
-                  {directSubordinates.map((sub, idx) => {
-                    const subPos = getFromRecord<string>(teamPositions, sub) || 'Sales Agronomist';
-                    const subProvince = getFromRecord<string>(teamProvinces, sub) || '-';
-                    const isCollapsed = collapsedNodes[sub];
-                    const subSubs = getDirectSubordinates(sub);
-                    const hasChildren = subSubs.length > 0;
-                    
-                    const bgBadge = depth === 1 
-                      ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/15' 
-                      : depth === 2 
-                        ? 'bg-blue-500/10 text-blue-600 border-blue-500/15' 
-                        : 'bg-purple-500/10 text-purple-600 border-purple-500/15';
+              const renderRecursiveTeamNode = (
+                parentName: string,
+                depth = 1,
+              ): React.ReactNode => {
+                const directSubordinates = getDirectSubordinates(parentName);
+                if (directSubordinates.length === 0) return null;
 
-                    return (
-                      <div key={idx} className="space-y-4">
-                        <div className="flex items-start gap-3">
-                          <span className={`size-7 rounded-full flex items-center justify-center font-bold shrink-0 border mt-1.5 shadow-sm text-[10px] ${bgBadge}`}>
-                            {depth}
-                          </span>
-                          <div 
-                            onClick={() => {
-                              if (hasChildren) {
-                                setCollapsedNodes(prev => ({ ...prev, [sub]: !prev[sub] }));
-                              }
-                            }}
-                            className={`bg-white hover:bg-slate-50 transition-all px-4 py-2.5 rounded-[18px] border border-slate-100 shadow-[0_8px_24px_rgba(21,75,226,0.06)] hover:shadow-[0_12px_28px_rgba(21,75,226,0.12)] flex-1 flex items-center justify-between ${hasChildren ? 'cursor-pointer' : 'cursor-default'}`}
-                          >
-                            <div className="flex-1 min-w-0 pr-2 text-left">
-                              <p className="font-bold text-xs text-[#181a2c]">{normalizeName(sub)}</p>
-                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                                <span className={`text-[7.5px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
-                                  depth === 1 ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : depth === 2 ? 'text-blue-600 bg-blue-50 border-blue-100' : 'text-purple-600 bg-purple-50 border-purple-100'
-                                }`}>
-                                  {normalizePosition(subPos)}
-                                </span>
-                                {subProvince && subProvince !== '-' && (
-                                  <span className="text-[7.5px] font-bold text-[#8E94B7] bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-100 uppercase tracking-wide">
-                                    {subProvince}
+                return (
+                  <div className="space-y-4">
+                    {directSubordinates.map((sub, idx) => {
+                      const subPos =
+                        getFromRecord<string>(teamPositions, sub) ||
+                        "Sales Agronomist";
+                      const subProvince =
+                        getFromRecord<string>(teamProvinces, sub) || "-";
+                      const isCollapsed = collapsedNodes[sub];
+                      const subSubs = getDirectSubordinates(sub);
+                      const hasChildren = subSubs.length > 0;
+
+                      const bgBadge =
+                        depth === 1
+                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/15"
+                          : depth === 2
+                            ? "bg-blue-500/10 text-blue-600 border-blue-500/15"
+                            : "bg-purple-500/10 text-purple-600 border-purple-500/15";
+
+                      return (
+                        <div key={idx} className="space-y-4">
+                          <div className="flex items-start gap-3">
+                            <span
+                              className={`size-7 rounded-full flex items-center justify-center font-bold shrink-0 border mt-1.5 shadow-sm text-[10px] ${bgBadge}`}
+                            >
+                              {depth}
+                            </span>
+                            <div
+                              onClick={() => {
+                                if (hasChildren) {
+                                  setCollapsedNodes((prev) => ({
+                                    ...prev,
+                                    [sub]: !prev[sub],
+                                  }));
+                                }
+                              }}
+                              className={`bg-white hover:bg-slate-50 transition-all px-4 py-2.5 rounded-[18px] border border-slate-100 shadow-[0_8px_24px_rgba(21,75,226,0.06)] hover:shadow-[0_12px_28px_rgba(21,75,226,0.12)] flex-1 flex items-center justify-between ${hasChildren ? "cursor-pointer" : "cursor-default"}`}
+                            >
+                              <div className="flex-1 min-w-0 pr-2 text-left">
+                                <p className="font-bold text-xs text-[#181a2c]">
+                                  {normalizeName(sub)}
+                                </p>
+                                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                  <span
+                                    className={`text-[7.5px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${
+                                      depth === 1
+                                        ? "text-emerald-600 bg-emerald-50 border-emerald-100"
+                                        : depth === 2
+                                          ? "text-blue-600 bg-blue-50 border-blue-100"
+                                          : "text-purple-600 bg-purple-50 border-purple-100"
+                                    }`}
+                                  >
+                                    {normalizePosition(subPos)}
+                                  </span>
+                                  {subProvince && subProvince !== "-" && (
+                                    <span className="text-[7.5px] font-bold text-[#8E94B7] bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-100 uppercase tracking-wide">
+                                      {subProvince}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 z-10 relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const emp = employees.find((emp) =>
+                                      matchNames(emp.name, sub),
+                                    );
+                                    setEmployeeEditModal({
+                                      isOpen: true,
+                                      item: emp || {
+                                        name: sub,
+                                        position: subPos,
+                                        province: subProvince,
+                                      },
+                                    });
+                                  }}
+                                  className="size-7 bg-[#edecff]/60 hover:bg-[#edecff] text-primary rounded-full border border-[#c4c5d8]/40 flex items-center justify-center transition-all shadow-none cursor-pointer"
+                                  title="Edit Karyawan"
+                                >
+                                  <span className="material-symbols-outlined text-[13px]">
+                                    edit
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const emp = employees.find((emp) =>
+                                      matchNames(emp.name, sub),
+                                    );
+                                    setEmployeeDeleteModal({
+                                      isOpen: true,
+                                      item: emp || { name: sub },
+                                    });
+                                  }}
+                                  className="size-7 bg-red-50 hover:bg-red-100 text-red-500 rounded-full border border-red-100 flex items-center justify-center transition-all shadow-none cursor-pointer"
+                                  title="Hapus Karyawan"
+                                >
+                                  <span className="material-symbols-outlined text-[13px]">
+                                    delete
+                                  </span>
+                                </button>
+                                {hasChildren && (
+                                  <span className="material-symbols-outlined text-[#8E94B7] text-md leading-none select-none ml-1">
+                                    {isCollapsed
+                                      ? "expand_more"
+                                      : "expand_less"}
                                   </span>
                                 )}
                               </div>
                             </div>
+                          </div>
 
-                            <div className="flex items-center gap-2 shrink-0 z-10 relative">
-                              <button 
+                          {hasChildren &&
+                            !isCollapsed &&
+                            renderRecursiveTeamNode(sub, depth + 1)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              };
+
+              const rootSubordinates = getDirectSubordinates(userData.name);
+
+              return (
+                <div className="animate-in fade-in slide-in-from-left-4 duration-300">
+                  <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.1)] mb-6 border border-[#edecff] animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div className="flex items-center justify-between gap-4 mb-5 pb-3 border-b border-[#edecff]">
+                      <div>
+                        <h3 className="text-xs font-bold text-[#181a2c] uppercase tracking-wider">
+                          Hirarki Posisi Tim
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() =>
+                          setEmployeeEditModal({
+                            isOpen: true,
+                            item: {
+                              isAdd: true,
+                              name: "",
+                              position: "",
+                              province: "",
+                              email: "",
+                              password: "",
+                              upline: userData?.name || "",
+                            },
+                          })
+                        }
+                        className="h-8 px-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-full font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 hover:opacity-95 transition-all shadow-md active:scale-[97%] cursor-pointer shrink-0"
+                      >
+                        <span className="material-symbols-outlined text-[13px]">
+                          person_add
+                        </span>
+                        Tambah Anggota
+                      </button>
+                    </div>
+
+                    {teamMembers.length > 1 ? (
+                      <div className="space-y-4">
+                        {/* Root Level 0 (Logged In User) */}
+                        <div className="flex items-start gap-3">
+                          <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center font-bold text-[10px] text-primary shrink-0 shadow-sm border border-primary/10 mt-1.5">
+                            0
+                          </div>
+                          <div
+                            onClick={() => {
+                              setCollapsedNodes((prev) => ({
+                                ...prev,
+                                [userData.name]: !prev[userData.name],
+                              }));
+                            }}
+                            className={`bg-gradient-to-r from-[#edecff] to-sky-50/50 px-4 py-2.5 rounded-[18px] flex-1 relative overflow-hidden group shadow-[0_8px_24px_rgba(21,75,226,0.08)] hover:shadow-[0_12px_30px_rgba(21,75,226,0.14)] border-0 transition-all flex items-center justify-between ${rootSubordinates.length > 0 ? "cursor-pointer" : "cursor-default"}`}
+                          >
+                            <div className="absolute top-0 right-0 h-full w-24 bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-xs text-[#181a2c]">
+                                {normalizeName(userData.name)}
+                              </p>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="text-[7.5px] font-extrabold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/10 uppercase tracking-wider">
+                                  {normalizePosition(
+                                    userData.position || "Business Analyst",
+                                  )}
+                                </span>
+                                {userData.province &&
+                                  userData.province !== "-" && (
+                                    <span className="text-[7.5px] font-bold text-[#8E94B7] bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-100 uppercase tracking-wide">
+                                      {userData.province}
+                                    </span>
+                                  )}
+                              </div>
+                            </div>
+
+                            {/* Actions & Chevron */}
+                            <div className="flex items-center gap-2 shrink-0 ml-3 z-10 relative">
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const emp = employees.find(emp => matchNames(emp.name, sub));
-                                  setEmployeeEditModal({ isOpen: true, item: emp || { name: sub, position: subPos, province: subProvince } });
+                                  const emp = employees.find((emp) =>
+                                    matchNames(emp.name, userData.name),
+                                  );
+                                  setEmployeeEditModal({
+                                    isOpen: true,
+                                    item: emp || {
+                                      name: userData.name,
+                                      position: userData.position,
+                                      province: userData.province || "",
+                                      email: userData.email || "",
+                                    },
+                                  });
                                 }}
-                                className="size-7 bg-[#edecff]/60 hover:bg-[#edecff] text-primary rounded-full border border-[#c4c5d8]/40 flex items-center justify-center transition-all shadow-none cursor-pointer"
+                                className="size-7 bg-white/80 hover:bg-white text-primary rounded-full border border-[#edecff] flex items-center justify-center transition-all shadow-sm cursor-pointer"
                                 title="Edit Karyawan"
                               >
-                                <span className="material-symbols-outlined text-[13px]">edit</span>
+                                <span className="material-symbols-outlined text-[14px]">
+                                  edit
+                                </span>
                               </button>
-                              <button 
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const emp = employees.find(emp => matchNames(emp.name, sub));
-                                  setEmployeeDeleteModal({ isOpen: true, item: emp || { name: sub } });
+                                  const emp = employees.find((emp) =>
+                                    matchNames(emp.name, userData.name),
+                                  );
+                                  setEmployeeDeleteModal({
+                                    isOpen: true,
+                                    item: emp || { name: userData.name },
+                                  });
                                 }}
-                                className="size-7 bg-red-50 hover:bg-red-100 text-red-500 rounded-full border border-red-100 flex items-center justify-center transition-all shadow-none cursor-pointer"
+                                className="size-7 bg-red-50 hover:bg-red-100 text-red-500 rounded-full border border-red-100 flex items-center justify-center transition-all shadow-sm cursor-pointer"
                                 title="Hapus Karyawan"
+                                disabled={matchNames(
+                                  userData.name,
+                                  "Aditya Wiratama",
+                                )}
                               >
-                                <span className="material-symbols-outlined text-[13px]">delete</span>
+                                <span className="material-symbols-outlined text-[14px]">
+                                  delete
+                                </span>
                               </button>
-                              {hasChildren && (
+                              {rootSubordinates.length > 0 && (
                                 <span className="material-symbols-outlined text-[#8E94B7] text-md leading-none select-none ml-1">
-                                  {isCollapsed ? 'expand_more' : 'expand_less'}
+                                  {collapsedNodes[userData.name]
+                                    ? "expand_more"
+                                    : "expand_less"}
                                 </span>
                               )}
                             </div>
                           </div>
                         </div>
 
-                        {hasChildren && !isCollapsed && renderRecursiveTeamNode(sub, depth + 1)}
+                        {/* Recursive Tree Render */}
+                        {!collapsedNodes[userData.name] &&
+                          renderRecursiveTeamNode(userData.name, 1)}
                       </div>
-                    );
-                  })}
+                    ) : (
+                      <p className="text-[9px] font-semibold text-[#8E94B7] text-center py-6 bg-slate-50/50 rounded-2xl border border-dashed border-[#edecff] uppercase tracking-wide">
+                        Tidak ada anggota tim di bawah Anda. Silakan klik tombol
+                        "Tambah Anggota" di atas untuk menambahkan.
+                      </p>
+                    )}
+                  </div>
                 </div>
               );
-            };
+            })()}
 
-            const rootSubordinates = getDirectSubordinates(userData.name);
-
-            return (
-              <div className="animate-in fade-in slide-in-from-left-4 duration-300">
-                <div className="bg-white p-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.1)] mb-6 border border-[#edecff] animate-in fade-in slide-in-from-bottom-3 duration-300">
-                  <div className="flex items-center justify-between gap-4 mb-5 pb-3 border-b border-[#edecff]">
-                    <div>
-                      <h3 className="text-xs font-bold text-[#181a2c] uppercase tracking-wider">Hirarki Posisi Tim</h3>
-                    </div>
-                    <button
-                      onClick={() => setEmployeeEditModal({
-                        isOpen: true,
-                        item: { isAdd: true, name: '', position: '', province: '', email: '', password: '', upline: userData?.name || '' }
-                      })}
-                      className="h-8 px-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-full font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 hover:opacity-95 transition-all shadow-md active:scale-[97%] cursor-pointer shrink-0"
-                    >
-                      <span className="material-symbols-outlined text-[13px]">person_add</span>
-                      Tambah Anggota
-                    </button>
-                  </div>
-                  
-                  {teamMembers.length > 1 ? (
-                    <div className="space-y-4">
-                      {/* Root Level 0 (Logged In User) */}
-                      <div className="flex items-start gap-3">
-                        <div className="size-7 rounded-full bg-primary/10 flex items-center justify-center font-bold text-[10px] text-primary shrink-0 shadow-sm border border-primary/10 mt-1.5">
-                          0
-                        </div>
-                        <div 
-                          onClick={() => {
-                            setCollapsedNodes(prev => ({ ...prev, [userData.name]: !prev[userData.name] }));
-                          }}
-                          className={`bg-gradient-to-r from-[#edecff] to-sky-50/50 px-4 py-2.5 rounded-[18px] flex-1 relative overflow-hidden group shadow-[0_8px_24px_rgba(21,75,226,0.08)] hover:shadow-[0_12px_30px_rgba(21,75,226,0.14)] border-0 transition-all flex items-center justify-between ${rootSubordinates.length > 0 ? 'cursor-pointer' : 'cursor-default'}`}
-                        >
-                          <div className="absolute top-0 right-0 h-full w-24 bg-gradient-to-l from-primary/5 to-transparent pointer-events-none" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold text-xs text-[#181a2c]">{normalizeName(userData.name)}</p>
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <span className="text-[7.5px] font-extrabold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/10 uppercase tracking-wider">
-                                {normalizePosition(userData.position || 'Business Analyst')}
-                              </span>
-                              {userData.province && userData.province !== '-' && (
-                                <span className="text-[7.5px] font-bold text-[#8E94B7] bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-100 uppercase tracking-wide">
-                                  {userData.province}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Actions & Chevron */}
-                          <div className="flex items-center gap-2 shrink-0 ml-3 z-10 relative">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const emp = employees.find(emp => matchNames(emp.name, userData.name));
-                                setEmployeeEditModal({ isOpen: true, item: emp || { name: userData.name, position: userData.position, province: userData.province || '', email: userData.email || '' } });
-                              }}
-                              className="size-7 bg-white/80 hover:bg-white text-primary rounded-full border border-[#edecff] flex items-center justify-center transition-all shadow-sm cursor-pointer"
-                              title="Edit Karyawan"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">edit</span>
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const emp = employees.find(emp => matchNames(emp.name, userData.name));
-                                setEmployeeDeleteModal({ isOpen: true, item: emp || { name: userData.name } });
-                              }}
-                              className="size-7 bg-red-50 hover:bg-red-100 text-red-500 rounded-full border border-red-100 flex items-center justify-center transition-all shadow-sm cursor-pointer"
-                              title="Hapus Karyawan"
-                              disabled={matchNames(userData.name, 'Aditya Wiratama')}
-                            >
-                              <span className="material-symbols-outlined text-[14px]">delete</span>
-                            </button>
-                            {rootSubordinates.length > 0 && (
-                              <span className="material-symbols-outlined text-[#8E94B7] text-md leading-none select-none ml-1">
-                                {collapsedNodes[userData.name] ? 'expand_more' : 'expand_less'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Recursive Tree Render */}
-                      {!collapsedNodes[userData.name] && renderRecursiveTeamNode(userData.name, 1)}
-                    </div>
-                  ) : (
-                    <p className="text-[9px] font-semibold text-[#8E94B7] text-center py-6 bg-slate-50/50 rounded-2xl border border-dashed border-[#edecff] uppercase tracking-wide">
-                      Tidak ada anggota tim di bawah Anda. Silakan klik tombol "Tambah Anggota" di atas untuk menambahkan.
-                    </p>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {partnerSubTab === 'channel' && (
+          {partnerSubTab === "channel" && (
             <div className="animate-in fade-in slide-in-from-right-4 duration-300">
               {teamMembers.length > 1 && (
                 <div className="mb-6">
-                  <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wide ml-1 mb-2 block">Pilih PIC / Tim</label>
+                  <label className="text-[10px] text-[#8E94B7] font-bold uppercase tracking-wide ml-1 mb-2 block">
+                    Pilih PIC / Tim
+                  </label>
                   <div className="relative">
-                    <select value={mappingPic} onChange={(e) => setMappingPic(e.target.value)} className="w-full h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-6 font-semibold text-xs text-[#111] outline-none focus:ring-1 focus:ring-primary/20 transition-all appearance-none cursor-pointer pr-12">
+                    <select
+                      value={mappingPic}
+                      onChange={(e) => setMappingPic(e.target.value)}
+                      className="w-full h-14 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-6 font-semibold text-xs text-[#111] outline-none focus:ring-1 focus:ring-primary/20 transition-all appearance-none cursor-pointer pr-12"
+                    >
                       <option value="ALL_TEAM">Semua PIC</option>
-                      {[...teamMembers].sort((a, b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData)).map((picName, idx) => (
-                        <option key={idx} value={picName}>{picName}</option>
-                      ))}
+                      {[...teamMembers]
+                        .sort((a, b) =>
+                          compareMembersByLevel(
+                            a,
+                            b,
+                            teamLevels,
+                            teamPositions,
+                            userData,
+                          ),
+                        )
+                        .map((picName, idx) => (
+                          <option key={idx} value={picName}>
+                            {picName}
+                          </option>
+                        ))}
                     </select>
-                    <span className="material-symbols-outlined absolute right-6 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none">expand_more</span>
+                    <span className="material-symbols-outlined absolute right-6 top-1/2 -translate-y-1/2 text-[#8E94B7] pointer-events-none">
+                      expand_more
+                    </span>
                   </div>
                 </div>
               )}
 
               <div className="mb-6 flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 custom-scrollbar">
-                {mappingCategories.map(cat => (
-                  <button 
-                    key={cat} 
+                {mappingCategories.map((cat) => (
+                  <button
+                    key={cat}
                     onClick={() => setMappingCategory(cat)}
-                    className={`whitespace-nowrap px-4 py-2 rounded-full font-semibold text-[10.5px] uppercase tracking-wide transition-all ${mappingCategory === cat ? 'bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_12px_rgba(21,75,226,0.2)]' : 'bg-[#f4f2ff] text-[#8E94B7] hover:bg-[#edecff]'}`}
+                    className={`whitespace-nowrap px-4 py-2 rounded-full font-semibold text-[10.5px] uppercase tracking-wide transition-all ${mappingCategory === cat ? "bg-gradient-to-r from-primary to-cyan-400 text-white shadow-[0_4px_12px_rgba(21,75,226,0.2)]" : "bg-[#f4f2ff] text-[#8E94B7] hover:bg-[#edecff]"}`}
                   >
                     {cat}
                   </button>
@@ -6248,16 +9147,27 @@ const Dashboard = ({
 
               <div className="mb-4 flex items-center justify-between bg-white px-5 py-3.5 rounded-[20px] shadow-sm border border-[#edecff]">
                 <div>
-                  <h3 className="font-bold text-xs text-[#181a2c]">Daftar Partner</h3>
+                  <h3 className="font-bold text-xs text-[#181a2c]">
+                    Daftar Partner
+                  </h3>
                 </div>
                 <button
-                  onClick={() => setPartnerEditModal({
-                    isOpen: true,
-                    item: { isAdd: true, category: mappingCategory || 'Kios', name: '', pic: '' }
-                  })}
+                  onClick={() =>
+                    setPartnerEditModal({
+                      isOpen: true,
+                      item: {
+                        isAdd: true,
+                        category: mappingCategory || "Kios",
+                        name: "",
+                        pic: "",
+                      },
+                    })
+                  }
                   className="h-8 px-4 bg-gradient-to-r from-teal-500 to-emerald-500 text-white rounded-full font-bold text-[9px] uppercase tracking-wider flex items-center gap-1.5 hover:opacity-95 transition-all shadow-md active:scale-[97%] cursor-pointer"
                 >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
+                  <span className="material-symbols-outlined text-[13px]">
+                    add
+                  </span>
                   Tambah Partner
                 </button>
               </div>
@@ -6265,22 +9175,51 @@ const Dashboard = ({
               <div className="space-y-3">
                 {displayedPartnerChannels.length === 0 ? (
                   <div className="py-12 bg-white rounded-[24px] shadow-sm flex flex-col justify-center items-center">
-                     <span className="material-symbols-outlined text-[#8E94B7] text-3xl mb-2">sentiment_dissatisfied</span>
-                     <p className="text-[11px] font-semibold text-[#8E94B7] uppercase tracking-wider">Tidak Ada Data</p>
+                    <span className="material-symbols-outlined text-[#8E94B7] text-3xl mb-2">
+                      sentiment_dissatisfied
+                    </span>
+                    <p className="text-[11px] font-semibold text-[#8E94B7] uppercase tracking-wider">
+                      Tidak Ada Data
+                    </p>
                   </div>
                 ) : (
                   displayedPartnerChannels.map((channel, i) => (
-                    <div key={i} className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] hover:shadow-[0_8px_24px_rgba(21,75,226,0.12)] p-4 rounded-[16px] flex items-center justify-between transition-all duration-250">
+                    <div
+                      key={i}
+                      className="bg-white shadow-[0_4px_16px_rgba(21,75,226,0.06)] hover:shadow-[0_8px_24px_rgba(21,75,226,0.12)] p-4 rounded-[16px] flex items-center justify-between transition-all duration-250"
+                    >
                       <div className="flex-1 pr-4">
-                        <p className="font-semibold text-xs text-[#181a2c] leading-tight mb-0.5">{channel.name}</p>
-                        <p className="text-[10px] font-semibold text-[#8E94B7]">{channel.pic || '-'}</p>
+                        <p className="font-semibold text-xs text-[#181a2c] leading-tight mb-0.5">
+                          {channel.name}
+                        </p>
+                        <p className="text-[10px] font-semibold text-[#8E94B7]">
+                          {channel.pic || "-"}
+                        </p>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => setPartnerEditModal({ isOpen: true, item: channel })} className="size-9 bg-[#edecff] text-primary rounded-full border border-[#c4c5d8] flex items-center justify-center hover:bg-[#e6e6ff] transition-all shadow-none cursor-pointer">
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        <button
+                          onClick={() =>
+                            setPartnerEditModal({ isOpen: true, item: channel })
+                          }
+                          className="size-9 bg-[#edecff] text-primary rounded-full border border-[#c4c5d8] flex items-center justify-center hover:bg-[#e6e6ff] transition-all shadow-none cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            edit
+                          </span>
                         </button>
-                        <button onClick={() => setPartnerDeleteModal({ isOpen: true, item: channel })} className="size-9 bg-red-50 text-red-500 rounded-full border border-red-100 flex items-center justify-center hover:bg-red-100 transition-all shadow-none cursor-pointer" title="Hapus Partner">
-                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        <button
+                          onClick={() =>
+                            setPartnerDeleteModal({
+                              isOpen: true,
+                              item: channel,
+                            })
+                          }
+                          className="size-9 bg-red-50 text-red-500 rounded-full border border-red-100 flex items-center justify-center hover:bg-red-100 transition-all shadow-none cursor-pointer"
+                          title="Hapus Partner"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">
+                            delete
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -6289,717 +9228,1177 @@ const Dashboard = ({
               </div>
             </div>
           )}
-          
-          <PartnerEditModal isOpen={partnerEditModal.isOpen} item={partnerEditModal.item} onClose={() => setPartnerEditModal({ isOpen: false, item: null })} onSave={handleEditPartnerSave} isSaving={isActionLoading} availablePics={[...teamMembers].sort((a,b) => compareMembersByLevel(a, b, teamLevels, teamPositions, userData))} allCategories={allCategories} />
-          <PartnerDeleteModal isOpen={partnerDeleteModal.isOpen} onClose={() => setPartnerDeleteModal({ isOpen: false, item: null })} onConfirm={handleDeletePartnerConfirm} isProcessing={isActionLoading} itemName={partnerDeleteModal.item?.name} />
-          
-          <EmployeeEditModal 
-            isOpen={employeeEditModal.isOpen} 
-            item={employeeEditModal.item} 
-            onClose={() => setEmployeeEditModal({ isOpen: false, item: null })} 
-            onSave={handleEditEmployeeSave} 
-            isSaving={isActionLoading} 
-            allEmployeeNames={employees.map(emp => emp.name)} 
+
+          <PartnerEditModal
+            isOpen={partnerEditModal.isOpen}
+            item={partnerEditModal.item}
+            onClose={() => setPartnerEditModal({ isOpen: false, item: null })}
+            onSave={handleEditPartnerSave}
+            isSaving={isActionLoading}
+            availablePics={[...teamMembers].sort((a, b) =>
+              compareMembersByLevel(a, b, teamLevels, teamPositions, userData),
+            )}
+            allCategories={allCategories}
+          />
+          <PartnerDeleteModal
+            isOpen={partnerDeleteModal.isOpen}
+            onClose={() => setPartnerDeleteModal({ isOpen: false, item: null })}
+            onConfirm={handleDeletePartnerConfirm}
+            isProcessing={isActionLoading}
+            itemName={partnerDeleteModal.item?.name}
+          />
+
+          <EmployeeEditModal
+            isOpen={employeeEditModal.isOpen}
+            item={employeeEditModal.item}
+            onClose={() => setEmployeeEditModal({ isOpen: false, item: null })}
+            onSave={handleEditEmployeeSave}
+            isSaving={isActionLoading}
+            allEmployeeNames={employees.map((emp) => emp.name)}
             userData={userData}
             allProvinces={availableProvinces}
           />
-          <EmployeeDeleteModal 
-            isOpen={employeeDeleteModal.isOpen} 
-            onClose={() => setEmployeeDeleteModal({ isOpen: false, item: null })} 
-            onConfirm={handleDeleteEmployeeConfirm} 
-            isProcessing={isActionLoading} 
-            itemName={employeeDeleteModal.item?.name} 
+          <EmployeeDeleteModal
+            isOpen={employeeDeleteModal.isOpen}
+            onClose={() =>
+              setEmployeeDeleteModal({ isOpen: false, item: null })
+            }
+            onConfirm={handleDeleteEmployeeConfirm}
+            isProcessing={isActionLoading}
+            itemName={employeeDeleteModal.item?.name}
           />
         </div>
       )}
 
-      {activeTab === 'summary' && (
+      {activeTab === "summary" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
           <div className="mb-4 ml-1 flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">Stock <span className="text-primary font-bold">Summary</span></h1>
+            <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+              Stock <span className="text-primary font-bold">Summary</span>
+            </h1>
             {filteredSummaryData.length > 0 && (
               <button
                 onClick={handleDownloadSummaryExcel}
                 className="h-8.5 w-16 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-full flex items-center justify-center hover:opacity-95 transition-all shadow-md active:scale-[97%] cursor-pointer shrink-0"
                 title="Download Excel"
               >
-                <span className="material-symbols-outlined text-[18px]">download</span>
+                <span className="material-symbols-outlined text-[18px]">
+                  download
+                </span>
               </button>
             )}
           </div>
-          
+
           <div className="flex flex-col gap-3.5 mb-6">
             <div className="flex flex-col md:flex-row-reverse gap-4 md:gap-6 md:items-stretch">
               {filteredSummaryData.length > 0 && (
-              <div 
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsSummaryFilterOpen(!isSummaryFilterOpen);
-                  }
-                }}
-                className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white md:hover:scale-100 md:active:scale-100"
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-white/80">
-                      tune
-                    </span>
-                    <span className="font-semibold text-sm uppercase tracking-wider text-white/90">Grand Total</span>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="font-bold text-xl text-white">{formatNum(totalSummary.selectedTotal)}</span>
-                    <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">Total Kg</span>
-                  </div>
-                </div>
-                <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-3.5 mt-1">
-                  {selectedClusters.map(clusterKey => {
-                    if (clusterKey === 'Uncategorized' && (!totalSummary[clusterKey] || totalSummary[clusterKey] === 0)) return null;
-                    const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
-                    return (
-                      <div key={clusterKey} className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">{clusterConfig?.label || clusterKey}</span>
-                        <span className="font-bold text-xs truncate w-full text-white">{formatNum(totalSummary[clusterKey])}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="border-t border-white/15 pt-5 mt-4 w-full">
-                  <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
-                    {/* CHART 1: VISIT COVERAGE */}
-                    <div className="flex flex-col items-center text-center p-1 sm:p-3">
-                      <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">Kunjungan (Visit)</h4>
-                      <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
-                        <svg viewBox="0 0 220 220" className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44">
-                          <circle
-                            stroke="rgba(255, 255, 255, 0.15)"
-                            fill="transparent"
-                            strokeWidth={16}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                          />
-                          <circle
-                            stroke="white"
-                            fill="transparent"
-                            strokeWidth={16}
-                            strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
-                            strokeDashoffset={(2 * Math.PI * 95) - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}
-                            style={{ strokeDashoffset: `${(2 * Math.PI * 95) - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px` }}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                            strokeLinecap="round"
-                            className="transition-[stroke-dashoffset] duration-700 ease-out"
-                          />
-                        </svg>
-                        <div className="absolute flex flex-col items-center justify-center">
-                          <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">{activeVisitStats.percentage}%</span>
-                          <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">Visited</span>
-                        </div>
-                      </div>
-                      <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
-                        {(!mappingPic || cleanForMatch(mappingPic) === 'allteam' || cleanForMatch(mappingPic) === 'all_team') ? 'Team' : normalizeName(mappingPic)} sudah melakukan visit sebanyak <span className="font-bold text-white">{activeVisitStats.visited}</span> dari <span className="font-bold text-white">{activeVisitStats.total}</span> Partner <span className="text-white/80">({activeVisitStats.percentage}%)</span>
-                      </p>
+                <div
+                  onClick={() => {
+                    if (window.innerWidth < 768) {
+                      setIsSummaryFilterOpen(!isSummaryFilterOpen);
+                    }
+                  }}
+                  className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white md:hover:scale-100 md:active:scale-100"
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[18px] text-white/80">
+                        tune
+                      </span>
+                      <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
+                        Grand Total
+                      </span>
                     </div>
+                    <div className="flex flex-col items-end">
+                      <span className="font-bold text-xl text-white">
+                        {formatNum(totalSummary.selectedTotal)}
+                      </span>
+                      <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">
+                        Total Kg
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-3.5 mt-1">
+                    {selectedClusters.map((clusterKey) => {
+                      if (
+                        clusterKey === "Uncategorized" &&
+                        (!totalSummary[clusterKey] ||
+                          totalSummary[clusterKey] === 0)
+                      )
+                        return null;
+                      const clusterConfig = CLUSTER_CONFIG.find(
+                        (c) => c.key === clusterKey,
+                      );
+                      return (
+                        <div
+                          key={clusterKey}
+                          className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center"
+                        >
+                          <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                            {clusterConfig?.label || clusterKey}
+                          </span>
+                          <span className="font-bold text-xs truncate w-full text-white">
+                            {formatNum(totalSummary[clusterKey])}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-                    {/* CHART 2: CATEGORY DISTRIBUTION */}
-                    <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
-                      <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">Kategori Partner</h4>
-                      <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
-                        <svg viewBox="0 0 220 220" className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44">
-                          <circle
-                            stroke="rgba(255, 255, 255, 0.1)"
-                            fill="transparent"
-                            strokeWidth={16}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                          />
-                          {categoryChartSegments.map((segment) => (
+                  <div className="border-t border-white/15 pt-5 mt-4 w-full">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
+                      {/* CHART 1: VISIT COVERAGE */}
+                      <div className="flex flex-col items-center text-center p-1 sm:p-3">
+                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                          Kunjungan (Visit)
+                        </h4>
+                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
+                          <svg
+                            viewBox="0 0 220 220"
+                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                          >
                             <circle
-                              key={segment.name}
-                              stroke={segment.color}
+                              stroke="rgba(255, 255, 255, 0.15)"
                               fill="transparent"
                               strokeWidth={16}
-                              strokeLinecap="round"
-                              strokeDasharray={segment.strokeDasharray}
-                              strokeDashoffset={segment.strokeDashoffset}
-                              style={{ strokeDashoffset: `${segment.strokeDashoffset}px` }}
                               r={95}
                               cx={110}
                               cy={110}
+                            />
+                            <circle
+                              stroke="white"
+                              fill="transparent"
+                              strokeWidth={16}
+                              strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
+                              strokeDashoffset={
+                                2 * Math.PI * 95 -
+                                (activeVisitStats.percentage / 100) *
+                                  (2 * Math.PI * 95)
+                              }
+                              style={{
+                                strokeDashoffset: `${2 * Math.PI * 95 - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px`,
+                              }}
+                              r={95}
+                              cx={110}
+                              cy={110}
+                              strokeLinecap="round"
                               className="transition-[stroke-dashoffset] duration-700 ease-out"
                             />
-                          ))}
-                        </svg>
-                        <div className="absolute flex flex-col items-center justify-center">
-                          <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">{categoryDistributionStats.total}</span>
-                          <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">Partners</span>
+                          </svg>
+                          <div className="absolute flex flex-col items-center justify-center">
+                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">
+                              {activeVisitStats.percentage}%
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">
+                              Visited
+                            </span>
+                          </div>
                         </div>
+                        <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
+                          {!mappingPic ||
+                          cleanForMatch(mappingPic) === "allteam" ||
+                          cleanForMatch(mappingPic) === "all_team"
+                            ? "Team"
+                            : normalizeName(mappingPic)}{" "}
+                          sudah melakukan visit sebanyak{" "}
+                          <span className="font-bold text-white">
+                            {activeVisitStats.visited}
+                          </span>{" "}
+                          dari{" "}
+                          <span className="font-bold text-white">
+                            {activeVisitStats.total}
+                          </span>{" "}
+                          Partner{" "}
+                          <span className="text-white/80">
+                            ({activeVisitStats.percentage}%)
+                          </span>
+                        </p>
                       </div>
-                      <div className="w-full mt-1.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
-                          {categoryChartSegments.map((segment) => (
-                            <div key={segment.name} className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300">
-                              <span className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0" style={{ backgroundColor: segment.color }} />
-                              <span className="font-semibold text-white/90 truncate flex-1 text-left">{segment.name}</span>
-                              <span className="font-mono font-bold text-white shrink-0">{segment.value} <span className="text-[7px] sm:text-[8px] font-normal text-white/75">({Math.round(segment.percentage)}%)</span></span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            <div className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isSummaryFilterOpen ? 'block' : 'hidden md:block'}`}>
-              <div className="bg-white p-4 md:px-6 md:py-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.15)] animate-in fade-in slide-in-from-top-3 duration-300 h-full flex flex-col justify-center">
-                <div className="flex flex-row md:flex-col gap-2 md:gap-3.5">
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Group By</label>
-                    <div className="relative">
-                      <select value={summaryGroupBy} onChange={(e) => setSummaryGroupBy(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none">
-                        <option value="hybrid">Hybrid</option>
-                        <option value="subordinate">Team</option>
-                        <option value="area">Area</option>
-                        <option value="category">Category</option>
-                        <option value="crops">Crops</option>
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                      {/* CHART 2: CATEGORY DISTRIBUTION */}
+                      <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
+                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                          Kategori Partner
+                        </h4>
+                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
+                          <svg
+                            viewBox="0 0 220 220"
+                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                          >
+                            <circle
+                              stroke="rgba(255, 255, 255, 0.1)"
+                              fill="transparent"
+                              strokeWidth={16}
+                              r={95}
+                              cx={110}
+                              cy={110}
+                            />
+                            {categoryChartSegments.map((segment) => (
+                              <circle
+                                key={segment.name}
+                                stroke={segment.color}
+                                fill="transparent"
+                                strokeWidth={16}
+                                strokeLinecap="round"
+                                strokeDasharray={segment.strokeDasharray}
+                                strokeDashoffset={segment.strokeDashoffset}
+                                style={{
+                                  strokeDashoffset: `${segment.strokeDashoffset}px`,
+                                }}
+                                r={95}
+                                cx={110}
+                                cy={110}
+                                className="transition-[stroke-dashoffset] duration-700 ease-out"
+                              />
+                            ))}
+                          </svg>
+                          <div className="absolute flex flex-col items-center justify-center">
+                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">
+                              {categoryDistributionStats.total}
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">
+                              Partners
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full mt-1.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
+                            {categoryChartSegments.map((segment) => (
+                              <div
+                                key={segment.name}
+                                className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300"
+                              >
+                                <span
+                                  className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: segment.color }}
+                                />
+                                <span className="font-semibold text-white/90 truncate flex-1 text-left">
+                                  {segment.name}
+                                </span>
+                                <span className="font-mono font-bold text-white shrink-0">
+                                  {segment.value}{" "}
+                                  <span className="text-[7px] sm:text-[8px] font-normal text-white/75">
+                                    ({Math.round(segment.percentage)}%)
+                                  </span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Sub</label>
-                    <div className="relative">
-                      <select value={summarySubGroupBy} onChange={(e) => setSummarySubGroupBy(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none">
-                        <option value="channel">Channel</option>
-                        <option value="hybrid">Hybrid</option>
-                        <option value="subordinate">Team</option>
-                        <option value="area">Area</option>
-                        <option value="category">Category</option>
-                        <option value="crops">Crops</option>
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                </div>
+              )}
+
+              <div
+                className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isSummaryFilterOpen ? "block" : "hidden md:block"}`}
+              >
+                <div className="bg-white p-4 md:px-6 md:py-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.15)] animate-in fade-in slide-in-from-top-3 duration-300 h-full flex flex-col justify-center">
+                  <div className="flex flex-row md:flex-col gap-2 md:gap-3.5">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Group By
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={summaryGroupBy}
+                          onChange={(e) => setSummaryGroupBy(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none"
+                        >
+                          <option value="hybrid">Hybrid</option>
+                          <option value="subordinate">Team</option>
+                          <option value="area">Area</option>
+                          <option value="category">Category</option>
+                          <option value="crops">Crops</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Crop</label>
-                    <div className="relative">
-                      <select value={summaryFilterCrop} onChange={(e) => setSummaryFilterCrop(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none">
-                        {availableCrops.map(crop => (
-                          <option key={crop} value={crop}>{crop}</option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Sub
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={summarySubGroupBy}
+                          onChange={(e) => setSummarySubGroupBy(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none"
+                        >
+                          <option value="channel">Channel</option>
+                          <option value="hybrid">Hybrid</option>
+                          <option value="subordinate">Team</option>
+                          <option value="area">Area</option>
+                          <option value="category">Category</option>
+                          <option value="crops">Crops</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Crop
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={summaryFilterCrop}
+                          onChange={(e) => setSummaryFilterCrop(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none"
+                        >
+                          {availableCrops.map((crop) => (
+                            <option key={crop} value={crop}>
+                              {crop}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
             </div>
 
             {filteredSummaryData.length > 0 && (
               <div className="-mx-5 md:mx-0 md:bg-transparent md:border-none md:shadow-none md:divide-y-0 bg-white overflow-hidden md:overflow-visible rounded-[48px] md:rounded-none pt-4 md:pt-0 pb-4 md:pb-0 mb-8 shadow-[0_4px_44px_rgba(24,26,44,0.15)] border border-[#edecff] divide-y divide-[#edecff] transition-all md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-2">
-                {summaryGroupBy === 'subordinate' ? (
-                  filteredSummaryData.map((row) => renderRecursiveSummaryRow(row))
-                ) : (
-                  filteredSummaryData.map((row, i) => (
-                    <div key={i} className="p-0 overflow-hidden transition-all md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]">
-                      <div 
-                        className={`flex justify-between items-center ${row.isExpandable ? 'cursor-pointer' : ''} px-5 py-4 pb-2 hover:bg-slate-50/60 transition-colors`}
-                        onClick={() => row.isExpandable && toggleRow(row.name)}
+                {summaryGroupBy === "subordinate"
+                  ? filteredSummaryData.map((row) =>
+                      renderRecursiveSummaryRow(row),
+                    )
+                  : filteredSummaryData.map((row, i) => (
+                      <div
+                        key={i}
+                        className="p-0 overflow-hidden transition-all md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]"
                       >
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5">
-                             {row.isExpandable && (
-                               <span className="material-symbols-outlined text-primary text-[20px]">
-                                 {expandedRows[row.name] ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
-                               </span>
-                             )}
-                             {row.name}
-                          </span>
+                        <div
+                          className={`flex justify-between items-center ${row.isExpandable ? "cursor-pointer" : ""} px-5 py-4 pb-2 hover:bg-slate-50/60 transition-colors`}
+                          onClick={() =>
+                            row.isExpandable && toggleRow(row.name)
+                          }
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5">
+                              {row.isExpandable && (
+                                <span className="material-symbols-outlined text-primary text-[20px]">
+                                  {expandedRows[row.name]
+                                    ? "keyboard_arrow_down"
+                                    : "keyboard_arrow_right"}
+                                </span>
+                              )}
+                              {row.name}
+                            </span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold text-sm text-primary">
+                              {formatNum(row.selectedTotal)}
+                            </span>
+                            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">
+                              Total Kg
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex flex-col items-end">
-                          <span className="font-bold text-sm text-primary">{formatNum(row.selectedTotal)}</span>
-                          <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">Total Kg</span>
+
+                        <div className="mx-5 mb-3 mt-2 flex divide-x divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)] rounded-[14px] overflow-hidden">
+                          {selectedClusters.map((clusterKey) => {
+                            if (
+                              clusterKey === "Uncategorized" &&
+                              (!row[clusterKey] || row[clusterKey] === 0)
+                            )
+                              return null;
+                            const clusterConfig = CLUSTER_CONFIG.find(
+                              (c) => c.key === clusterKey,
+                            );
+                            return (
+                              <div
+                                key={clusterKey}
+                                className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors"
+                              >
+                                <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                                  {clusterConfig?.label || clusterKey}
+                                </span>
+                                <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                                  {formatNum(row[clusterKey])}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </div>
 
-                      <div className="mx-5 mb-3 mt-2 flex divide-x divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)] rounded-[14px] overflow-hidden">
-                        {selectedClusters.map(clusterKey => {
-                          if (clusterKey === 'Uncategorized' && (!row[clusterKey] || row[clusterKey] === 0)) return null;
-                          const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
-                          return (
-                            <div key={clusterKey} className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                              <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">{clusterConfig?.label || clusterKey}</span>
-                              <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row[clusterKey])}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {expandedRows[row.name] && row.children?.length > 0 && (
-                        <div className="pb-4 pt-3 border-t border-[#edecff] flex flex-col gap-3.5 px-5 bg-slate-50/50">
-                          {summarySubGroupBy === 'subordinate' ? (
-                            row.children.map((child: any) => renderRecursiveSubordinate(child))
-                          ) : (
-                            row.children.map((child, j) => {
-                              const isChildZeroTeam = summarySubGroupBy === 'subordinate' && child.selectedTotal === 0;
-                              return (
-                                <div key={`${i}-${j}`} className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 ${
-                                  isChildZeroTeam 
-                                    ? 'bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]' 
-                                    : 'bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]'
-                                }`}>
-                                  <div className="flex justify-between items-center mb-2 px-1">
-                                    <div className="flex flex-col">
-                                      <span className="font-bold text-[11px] text-[#181a2c] uppercase pr-2 flex items-center gap-1.5 flex-wrap">
-                                        <span>{renderMaybeChannelName(child.name)}</span>
-                                        {isChildZeroTeam && (
-                                          <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">No Activity</span>
-                                        )}
-                                        {summarySubGroupBy === 'channel' && child.category && (
-                                          <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">{child.category}</span>
-                                        )}
-                                      </span>
-                                    </div>
-                                    <span className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? 'text-red-600' : 'text-[#181a2c]'}`}>{formatNum(child.selectedTotal)} <span className="text-[8.5px] text-[#8E94B7]">Kg</span></span>
-                                  </div>
-                                  <div className={`flex w-full divide-x rounded-[14px] overflow-hidden ${
-                                    isChildZeroTeam 
-                                      ? 'divide-red-200 bg-red-100/40' 
-                                      : 'divide-primary/10 bg-primary/8'
-                                  }`}>
-                                    {selectedClusters.map(clusterKey => {
-                                      if (clusterKey === 'Uncategorized' && (!child[clusterKey] || child[clusterKey] === 0)) return null;
-                                      const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
-                                      return (
-                                        <div key={clusterKey} className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                          isChildZeroTeam ? 'hover:bg-red-200/30' : 'hover:bg-primary/5'
-                                        }`}>
-                                          <span className={`text-[7.5px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${
-                                            isChildZeroTeam ? 'text-red-700/60' : 'text-primary/70'
-                                          }`}>{clusterConfig?.label || clusterKey}</span>
-                                          <span className={`font-black text-[10px] truncate w-full ${
-                                            isChildZeroTeam ? 'text-red-700' : 'text-primary'
-                                          }`}>{formatNum(child[clusterKey])}</span>
+                        {expandedRows[row.name] && row.children?.length > 0 && (
+                          <div className="pb-4 pt-3 border-t border-[#edecff] flex flex-col gap-3.5 px-5 bg-slate-50/50">
+                            {summarySubGroupBy === "subordinate"
+                              ? row.children.map((child: any) =>
+                                  renderRecursiveSubordinate(child),
+                                )
+                              : row.children.map((child, j) => {
+                                  const isChildZeroTeam =
+                                    summarySubGroupBy === "subordinate" &&
+                                    child.selectedTotal === 0;
+                                  return (
+                                    <div
+                                      key={`${i}-${j}`}
+                                      className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 ${
+                                        isChildZeroTeam
+                                          ? "bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]"
+                                          : "bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]"
+                                      }`}
+                                    >
+                                      <div className="flex justify-between items-center mb-2 px-1">
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-[11px] text-[#181a2c] uppercase pr-2 flex items-center gap-1.5 flex-wrap">
+                                            <span>
+                                              {renderMaybeChannelName(
+                                                child.name,
+                                              )}
+                                            </span>
+                                            {isChildZeroTeam && (
+                                              <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                                No Activity
+                                              </span>
+                                            )}
+                                            {summarySubGroupBy === "channel" &&
+                                              child.category && (
+                                                <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+                                                  {child.category}
+                                                </span>
+                                              )}
+                                          </span>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                                        <span
+                                          className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? "text-red-600" : "text-[#181a2c]"}`}
+                                        >
+                                          {formatNum(child.selectedTotal)}{" "}
+                                          <span className="text-[8.5px] text-[#8E94B7]">
+                                            Kg
+                                          </span>
+                                        </span>
+                                      </div>
+                                      <div
+                                        className={`flex w-full divide-x rounded-[14px] overflow-hidden ${
+                                          isChildZeroTeam
+                                            ? "divide-red-200 bg-red-100/40"
+                                            : "divide-primary/10 bg-primary/8"
+                                        }`}
+                                      >
+                                        {selectedClusters.map((clusterKey) => {
+                                          if (
+                                            clusterKey === "Uncategorized" &&
+                                            (!child[clusterKey] ||
+                                              child[clusterKey] === 0)
+                                          )
+                                            return null;
+                                          const clusterConfig =
+                                            CLUSTER_CONFIG.find(
+                                              (c) => c.key === clusterKey,
+                                            );
+                                          return (
+                                            <div
+                                              key={clusterKey}
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-200/30"
+                                                  : "hover:bg-primary/5"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase tracking-wider mb-0.5 truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700/60"
+                                                    : "text-primary/70"
+                                                }`}
+                                              >
+                                                {clusterConfig?.label ||
+                                                  clusterKey}
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700"
+                                                    : "text-primary"
+                                                }`}
+                                              >
+                                                {formatNum(child[clusterKey])}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
               </div>
             )}
 
             {filteredSummaryData.length === 0 && (
               <div className="py-16 text-center flex flex-col items-center bg-white rounded-[24px] border border-[#edecff] shadow-sm">
-                 <span className="material-symbols-outlined text-[40px] text-[#8E94B7] mb-4">inventory_2</span>
-                 <p className="font-semibold text-[#8E94B7] text-xs">No data available for the selected filters.</p>
+                <span className="material-symbols-outlined text-[40px] text-[#8E94B7] mb-4">
+                  inventory_2
+                </span>
+                <p className="font-semibold text-[#8E94B7] text-xs">
+                  No data available for the selected filters.
+                </p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'pog' && (
+      {activeTab === "pog" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300">
           <div className="mb-4 ml-1">
-            <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">POG <span className="text-primary font-bold">Analytics</span></h1>
+            <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+              POG <span className="text-primary font-bold">Analytics</span>
+            </h1>
           </div>
-          
+
           <div className="flex flex-col gap-3.5 mb-6">
             <div className="flex flex-col md:flex-row-reverse gap-4 md:gap-6 md:items-stretch">
               {aggregatedPogData.length > 0 && (
-              <div 
-                onClick={() => {
-                  if (window.innerWidth < 768) {
-                    setIsPogFilterOpen(!isPogFilterOpen);
-                  }
-                }}
-                className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white mb-1.5 md:mb-0 md:hover:scale-100 md:active:scale-100"
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[18px] text-white/80">
-                      tune
-                    </span>
-                    <span className="font-semibold text-sm uppercase tracking-wider text-white/90">Grand Total</span>
-                  </div>
-                  <div className="flex flex-col items-end">
-                    <span className="font-bold text-xl text-white">{formatNum(totalPog.pog)}</span>
-                    <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">POG</span>
-                  </div>
-                </div>
-                 <div className="flex flex-row w-full gap-1.5 md:gap-2 border-t border-white/15 pt-3.5 mt-1">
-                  {/* Table 1: Opening and End Inv group */}
-                  <div className="flex-[2] flex divide-x divide-white/15 bg-white/5 rounded-[12px] p-0.5">
-                    <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                      <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">Opening</span>
-                      <span className="font-bold text-xs truncate w-full text-white">{formatNum(totalPog.lastQty)}</span>
+                <div
+                  onClick={() => {
+                    if (window.innerWidth < 768) {
+                      setIsPogFilterOpen(!isPogFilterOpen);
+                    }
+                  }}
+                  className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.45)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-250 cursor-pointer md:cursor-default select-none text-white mb-1.5 md:mb-0 md:hover:scale-100 md:active:scale-100"
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[18px] text-white/80">
+                        tune
+                      </span>
+                      <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
+                        Grand Total
+                      </span>
                     </div>
-                    <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                      <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">End Inv</span>
-                      <span className="font-bold text-xs truncate w-full text-white">{formatNum(totalPog.currentQty)}</span>
+                    <div className="flex flex-col items-end">
+                      <span className="font-bold text-xl text-white">
+                        {formatNum(totalPog.pog)}
+                      </span>
+                      <span className="text-[8px] text-white/80 uppercase tracking-widest font-bold">
+                        POG
+                      </span>
                     </div>
                   </div>
-
-                  {/* Table 2: Stock in, idle stock, POG group */}
-                  <div className="flex-[3] flex divide-x divide-white/20 bg-gradient-to-br from-white/25 via-white/15 to-white/25 border border-white/20 rounded-[12px] p-0.5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
-                    <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
-                      <span className="text-[8px] font-bold uppercase tracking-wider text-white/95 mb-0.5 truncate w-full">Stock In</span>
-                      <span className="font-extrabold text-xs truncate w-full text-white">{formatNum(totalPog.sellIn)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
-                      <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">Idle Stock</span>
-                      <span className="font-extrabold text-xs truncate w-full text-amber-100">{formatNum(totalPog.idleStock)}</span>
-                    </div>
-                    <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
-                      <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">POG</span>
-                      <span className="font-black text-xs truncate w-full text-cyan-50">{formatNum(totalPog.pog)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-white/15 pt-5 mt-4 w-full">
-                  <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
-                    {/* CHART 1: VISIT COVERAGE */}
-                    <div className="flex flex-col items-center text-center p-1 sm:p-3">
-                      <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">Kunjungan (Visit)</h4>
-                      <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
-                        <svg viewBox="0 0 220 220" className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44">
-                          <circle
-                            stroke="rgba(255, 255, 255, 0.15)"
-                            fill="transparent"
-                            strokeWidth={16}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                          />
-                          <circle
-                            stroke="white"
-                            fill="transparent"
-                            strokeWidth={16}
-                            strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
-                            strokeDashoffset={(2 * Math.PI * 95) - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}
-                            style={{ strokeDashoffset: `${(2 * Math.PI * 95) - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px` }}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                            strokeLinecap="round"
-                            className="transition-[stroke-dashoffset] duration-700 ease-out"
-                          />
-                        </svg>
-                        <div className="absolute flex flex-col items-center justify-center">
-                          <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">{activeVisitStats.percentage}%</span>
-                          <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">Visited</span>
-                        </div>
+                  <div className="flex flex-row w-full gap-1.5 md:gap-2 border-t border-white/15 pt-3.5 mt-1">
+                    {/* Table 1: Opening and End Inv group */}
+                    <div className="flex-[2] flex divide-x divide-white/15 bg-white/5 rounded-[12px] p-0.5">
+                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                          Opening
+                        </span>
+                        <span className="font-bold text-xs truncate w-full text-white">
+                          {formatNum(totalPog.lastQty)}
+                        </span>
                       </div>
-                      <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
-                        {(!mappingPic || cleanForMatch(mappingPic) === 'allteam' || cleanForMatch(mappingPic) === 'all_team') ? 'Team' : normalizeName(mappingPic)} sudah melakukan visit sebanyak <span className="font-bold text-white">{activeVisitStats.visited}</span> dari <span className="font-bold text-white">{activeVisitStats.total}</span> Partner <span className="text-white/80">({activeVisitStats.percentage}%)</span>
-                      </p>
+                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                          End Inv
+                        </span>
+                        <span className="font-bold text-xs truncate w-full text-white">
+                          {formatNum(totalPog.currentQty)}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* CHART 2: CATEGORY DISTRIBUTION */}
-                    <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
-                      <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">Kategori Partner</h4>
-                      <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
-                        <svg viewBox="0 0 220 220" className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44">
-                          <circle
-                            stroke="rgba(255, 255, 255, 0.1)"
-                            fill="transparent"
-                            strokeWidth={16}
-                            r={95}
-                            cx={110}
-                            cy={110}
-                          />
-                          {categoryChartSegments.map((segment) => (
+                    {/* Table 2: Stock in, idle stock, POG group */}
+                    <div className="flex-[3] flex divide-x divide-white/20 bg-gradient-to-br from-white/25 via-white/15 to-white/25 border border-white/20 rounded-[12px] p-0.5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.25)]">
+                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-white/95 mb-0.5 truncate w-full">
+                          Stock In
+                        </span>
+                        <span className="font-extrabold text-xs truncate w-full text-white">
+                          {formatNum(totalPog.sellIn)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">
+                          Idle Stock
+                        </span>
+                        <span className="font-extrabold text-xs truncate w-full text-amber-100">
+                          {formatNum(totalPog.idleStock)}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center hover:bg-white/5 transition-colors rounded-[12px]">
+                        <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">
+                          POG
+                        </span>
+                        <span className="font-black text-xs truncate w-full text-cyan-50">
+                          {formatNum(totalPog.pog)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-white/15 pt-5 mt-4 w-full">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:gap-8 items-start justify-center">
+                      {/* CHART 1: VISIT COVERAGE */}
+                      <div className="flex flex-col items-center text-center p-1 sm:p-3">
+                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                          Kunjungan (Visit)
+                        </h4>
+                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 animate-in zoom-in duration-500">
+                          <svg
+                            viewBox="0 0 220 220"
+                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                          >
                             <circle
-                              key={segment.name}
-                              stroke={segment.color}
+                              stroke="rgba(255, 255, 255, 0.15)"
                               fill="transparent"
                               strokeWidth={16}
-                              strokeLinecap="round"
-                              strokeDasharray={segment.strokeDasharray}
-                              strokeDashoffset={segment.strokeDashoffset}
-                              style={{ strokeDashoffset: `${segment.strokeDashoffset}px` }}
                               r={95}
                               cx={110}
                               cy={110}
+                            />
+                            <circle
+                              stroke="white"
+                              fill="transparent"
+                              strokeWidth={16}
+                              strokeDasharray={`${2 * Math.PI * 95} ${2 * Math.PI * 95}`}
+                              strokeDashoffset={
+                                2 * Math.PI * 95 -
+                                (activeVisitStats.percentage / 100) *
+                                  (2 * Math.PI * 95)
+                              }
+                              style={{
+                                strokeDashoffset: `${2 * Math.PI * 95 - (activeVisitStats.percentage / 100) * (2 * Math.PI * 95)}px`,
+                              }}
+                              r={95}
+                              cx={110}
+                              cy={110}
+                              strokeLinecap="round"
                               className="transition-[stroke-dashoffset] duration-700 ease-out"
                             />
-                          ))}
-                        </svg>
-                        <div className="absolute flex flex-col items-center justify-center">
-                          <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">{categoryDistributionStats.total}</span>
-                          <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">Partners</span>
+                          </svg>
+                          <div className="absolute flex flex-col items-center justify-center">
+                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none">
+                              {activeVisitStats.percentage}%
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1">
+                              Visited
+                            </span>
+                          </div>
                         </div>
+                        <p className="text-[9.5px] sm:text-[11px] md:text-[11.5px] leading-relaxed text-white/90 max-w-sm">
+                          {!mappingPic ||
+                          cleanForMatch(mappingPic) === "allteam" ||
+                          cleanForMatch(mappingPic) === "all_team"
+                            ? "Team"
+                            : normalizeName(mappingPic)}{" "}
+                          sudah melakukan visit sebanyak{" "}
+                          <span className="font-bold text-white">
+                            {activeVisitStats.visited}
+                          </span>{" "}
+                          dari{" "}
+                          <span className="font-bold text-white">
+                            {activeVisitStats.total}
+                          </span>{" "}
+                          Partner{" "}
+                          <span className="text-white/80">
+                            ({activeVisitStats.percentage}%)
+                          </span>
+                        </p>
                       </div>
-                      <div className="w-full mt-1.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
-                          {categoryChartSegments.map((segment) => (
-                            <div key={segment.name} className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300">
-                              <span className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0" style={{ backgroundColor: segment.color }} />
-                              <span className="font-semibold text-white/90 truncate flex-1 text-left">{segment.name}</span>
-                              <span className="font-mono font-bold text-white shrink-0">{segment.value} <span className="text-[7px] sm:text-[8px] font-normal text-white/75">({Math.round(segment.percentage)}%)</span></span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            <div className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isPogFilterOpen ? 'block' : 'hidden md:block'}`}>
-              <div className="bg-white p-4 md:px-6 md:py-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.15)] animate-in fade-in slide-in-from-top-3 duration-300 h-full flex flex-col justify-center">
-                <div className="flex flex-row md:flex-col gap-2 md:gap-3.5">
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Group By</label>
-                    <div className="relative">
-                      <select value={pogGroupBy} onChange={(e) => setPogGroupBy(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7">
-                        <option value="hybrid">Hybrid</option>
-                        <option value="subordinate">Team</option>
-                        <option value="area">Area</option>
-                        <option value="category">Category</option>
-                        <option value="crops">Crops</option>
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                      {/* CHART 2: CATEGORY DISTRIBUTION */}
+                      <div className="flex flex-col items-center text-center p-1 sm:p-3 border-l border-white/15">
+                        <h4 className="text-[8.5px] sm:text-[10px] font-bold uppercase tracking-wider text-white/90 mb-3 sm:mb-4 font-sans line-clamp-1">
+                          Kategori Partner
+                        </h4>
+                        <div className="relative flex items-center justify-center shrink-0 mb-3 sm:mb-4 md:mb-5 animate-in zoom-in duration-500">
+                          <svg
+                            viewBox="0 0 220 220"
+                            className="rotate-[-90deg] w-24 h-24 sm:w-32 sm:h-32 md:w-36 md:h-36 lg:w-40 lg:h-40 xl:w-44 xl:h-44"
+                          >
+                            <circle
+                              stroke="rgba(255, 255, 255, 0.1)"
+                              fill="transparent"
+                              strokeWidth={16}
+                              r={95}
+                              cx={110}
+                              cy={110}
+                            />
+                            {categoryChartSegments.map((segment) => (
+                              <circle
+                                key={segment.name}
+                                stroke={segment.color}
+                                fill="transparent"
+                                strokeWidth={16}
+                                strokeLinecap="round"
+                                strokeDasharray={segment.strokeDasharray}
+                                strokeDashoffset={segment.strokeDashoffset}
+                                style={{
+                                  strokeDashoffset: `${segment.strokeDashoffset}px`,
+                                }}
+                                r={95}
+                                cx={110}
+                                cy={110}
+                                className="transition-[stroke-dashoffset] duration-700 ease-out"
+                              />
+                            ))}
+                          </svg>
+                          <div className="absolute flex flex-col items-center justify-center">
+                            <span className="text-lg sm:text-2xl md:text-3xl xl:text-4xl font-extrabold text-white tracking-tight leading-none font-sans">
+                              {categoryDistributionStats.total}
+                            </span>
+                            <span className="text-[7px] sm:text-[8px] md:text-[9px] font-bold uppercase tracking-wider text-white/70 mt-0.5 sm:mt-1 font-mono">
+                              Partners
+                            </span>
+                          </div>
+                        </div>
+                        <div className="w-full mt-1.5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 px-0.5 sm:px-1 text-[8.5px] sm:text-[10px] text-white/90">
+                            {categoryChartSegments.map((segment) => (
+                              <div
+                                key={segment.name}
+                                className="flex items-center gap-1 sm:gap-1.5 bg-black/12 py-1 sm:py-1.5 px-1.5 sm:px-2 rounded-full border border-black/5 truncate hover:bg-black/25 transition-colors shadow-sm animate-in fade-in-50 duration-300"
+                              >
+                                <span
+                                  className="inline-block w-2 sm:w-2.5 h-2 sm:h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: segment.color }}
+                                />
+                                <span className="font-semibold text-white/90 truncate flex-1 text-left">
+                                  {segment.name}
+                                </span>
+                                <span className="font-mono font-bold text-white shrink-0">
+                                  {segment.value}{" "}
+                                  <span className="text-[7px] sm:text-[8px] font-normal text-white/75">
+                                    ({Math.round(segment.percentage)}%)
+                                  </span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Sub</label>
-                    <div className="relative">
-                      <select value={pogSubGroupBy} onChange={(e) => setPogSubGroupBy(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7">
-                        <option value="channel">Channel</option>
-                        <option value="hybrid">Hybrid</option>
-                        <option value="subordinate">Team</option>
-                        <option value="area">Area</option>
-                        <option value="category">Category</option>
-                        <option value="crops">Crops</option>
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                </div>
+              )}
+
+              <div
+                className={`w-full md:w-64 lg:w-72 xl:w-80 shrink-0 transition-all ${isPogFilterOpen ? "block" : "hidden md:block"}`}
+              >
+                <div className="bg-white p-4 md:px-6 md:py-5 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.15)] animate-in fade-in slide-in-from-top-3 duration-300 h-full flex flex-col justify-center">
+                  <div className="flex flex-row md:flex-col gap-2 md:gap-3.5">
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Group By
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={pogGroupBy}
+                          onChange={(e) => setPogGroupBy(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7"
+                        >
+                          <option value="hybrid">Hybrid</option>
+                          <option value="subordinate">Team</option>
+                          <option value="area">Area</option>
+                          <option value="category">Category</option>
+                          <option value="crops">Crops</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">Crop</label>
-                    <div className="relative">
-                      <select value={pogFilterCrop} onChange={(e) => setPogFilterCrop(e.target.value)} className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7">
-                        {availableCrops.map(crop => (
-                          <option key={crop} value={crop}>{crop}</option>
-                        ))}
-                      </select>
-                      <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">expand_more</span>
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Sub
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={pogSubGroupBy}
+                          onChange={(e) => setPogSubGroupBy(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7"
+                        >
+                          <option value="channel">Channel</option>
+                          <option value="hybrid">Hybrid</option>
+                          <option value="subordinate">Team</option>
+                          <option value="area">Area</option>
+                          <option value="category">Category</option>
+                          <option value="crops">Crops</option>
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <label className="text-[9px] text-[#8E94B7] font-bold uppercase tracking-wider block mb-1.5 truncate ml-1">
+                        Crop
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={pogFilterCrop}
+                          onChange={(e) => setPogFilterCrop(e.target.value)}
+                          className="w-full h-10 bg-white shadow-[0_4px_16px_rgba(21,75,226,0.08)] rounded-full px-4 font-semibold text-[10.5px] text-primary outline-none truncate appearance-none pr-7"
+                        >
+                          {availableCrops.map((crop) => (
+                            <option key={crop} value={crop}>
+                              {crop}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-primary text-base pointer-events-none">
+                          expand_more
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
             </div>
 
             {aggregatedPogData.length > 0 && (
               <div className="-mx-5 md:mx-0 md:bg-transparent md:border-none md:shadow-none md:divide-y-0 bg-white overflow-hidden md:overflow-visible rounded-[48px] md:rounded-none pt-4 md:pt-0 pb-4 md:pb-0 mb-8 shadow-[0_4px_44px_rgba(24,26,44,0.15)] border border-[#edecff] divide-y divide-[#edecff] transition-all md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-2">
-                {pogGroupBy === 'subordinate' ? (
-                  aggregatedPogData.map((row) => renderRecursivePogRow(row))
-                ) : (
-                  aggregatedPogData.map((row, i) => (
-                    <div key={i} className="p-0 overflow-hidden transition-all md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]">
-                      <div 
-                        className={`flex justify-between items-center ${row.isExpandable ? 'cursor-pointer' : ''} px-5 py-4 pb-2 hover:bg-slate-50/60 transition-colors`}
-                        onClick={() => row.isExpandable && togglePogRow(row.name)}
+                {pogGroupBy === "subordinate"
+                  ? aggregatedPogData.map((row) => renderRecursivePogRow(row))
+                  : aggregatedPogData.map((row, i) => (
+                      <div
+                        key={i}
+                        className="p-0 overflow-hidden transition-all md:bg-white md:rounded-[32px] md:shadow-[0_4px_24px_rgba(24,26,44,0.08)] md:border md:border-[#edecff]"
                       >
-                        <div className="flex flex-col">
-                          <span className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5">
-                             {row.isExpandable && (
-                               <span className="material-symbols-outlined text-primary text-[20px]">
-                                 {pogExpandedRows[row.name] ? 'keyboard_arrow_down' : 'keyboard_arrow_right'}
-                               </span>
-                             )}
-                             {row.name}
-                          </span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                          <span className="font-bold text-sm text-primary">{formatNum(row.pog)}</span>
-                          <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">POG</span>
-                        </div>
-                      </div>
-
-                      <div className="mx-5 mb-3 mt-2 flex flex-row gap-1.5 md:gap-2">
-                        {/* Table 1: Opening Inv & End of Inv */}
-                        <div className="flex-[2] flex divide-x divide-white/20 bg-primary/95 shadow-[0_12px_32px_rgba(21,75,226,0.25)] rounded-[14px] overflow-hidden">
-                          <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">Opening Inv</span>
-                            <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.lastQty)}</span>
+                        <div
+                          className={`flex justify-between items-center ${row.isExpandable ? "cursor-pointer" : ""} px-5 py-4 pb-2 hover:bg-slate-50/60 transition-colors`}
+                          onClick={() =>
+                            row.isExpandable && togglePogRow(row.name)
+                          }
+                        >
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-xs md:text-sm text-[#181a2c] uppercase flex items-center gap-1.5">
+                              {row.isExpandable && (
+                                <span className="material-symbols-outlined text-primary text-[20px]">
+                                  {pogExpandedRows[row.name]
+                                    ? "keyboard_arrow_down"
+                                    : "keyboard_arrow_right"}
+                                </span>
+                              )}
+                              {row.name}
+                            </span>
                           </div>
-                          <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">End of Inv</span>
-                            <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.currentQty)}</span>
-                          </div>
-                        </div>
-
-                        {/* Table 2: Stock in, idle stock, POG */}
-                        <div className="flex-[3] flex divide-x divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)] rounded-[14px] overflow-hidden">
-                          <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">Stock in</span>
-                            <span className="font-semibold text-[10.5px] truncate w-full text-white">{formatNum(row.sellIn)}</span>
-                          </div>
-                          <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">idle stock</span>
-                            <span className="font-semibold text-[10.5px] truncate w-full text-amber-100">{formatNum(row.idleStock)}</span>
-                          </div>
-                          <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
-                            <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">POG</span>
-                            <span className="font-semibold text-[10.5px] truncate w-full text-cyan-100 font-extrabold">{formatNum(row.pog)}</span>
+                          <div className="flex flex-col items-end">
+                            <span className="font-bold text-sm text-primary">
+                              {formatNum(row.pog)}
+                            </span>
+                            <span className="text-[8px] text-[#8E94B7] uppercase tracking-widest font-bold">
+                              POG
+                            </span>
                           </div>
                         </div>
-                      </div>
 
-                      {pogExpandedRows[row.name] && row.children?.length > 0 && (
-                        <div className="pb-4 pt-3 border-t border-[#edecff] flex flex-col gap-3.5 px-5 bg-slate-50/50">
-                          {pogSubGroupBy === 'subordinate' ? (
-                            row.children.map((child: any) => renderRecursivePogSubordinate(child))
-                          ) : (
-                            row.children.map((child, j) => {
-                              const isChildZeroTeam = child.lastQty === 0 && child.sellIn === 0 && child.sellOut === 0 && child.totalInv === 0 && child.currentQty === 0 && (child.idleStock || 0) === 0;
-                              return (
-                                <div key={`${i}-${j}`} className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 ${
-                                  isChildZeroTeam 
-                                    ? 'bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]' 
-                                    : 'bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]'
-                                }`}>
-                                  <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
-                                    <div className="flex flex-col">
-                                      <span className="font-bold text-[11px] text-[#181a2c] uppercase pr-2 flex items-center gap-1.5 flex-wrap">
-                                        <span>{renderMaybeChannelName(child.name)}</span>
-                                        {isChildZeroTeam && (
-                                          <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">No Activity</span>
-                                        )}
-                                        {pogSubGroupBy === 'channel' && child.category && (
-                                          <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">{child.category}</span>
-                                        )}
-                                      </span>
-                                    </div>
-                                    <span className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? 'text-red-600' : 'text-primary'}`}>
-                                      {formatNum(child.pog)} <span className="text-[8.5px] text-[#8E94B7]">POG</span>
-                                    </span>
-                                  </div>
-                                  <div className="flex flex-row w-full gap-1.5 md:gap-2">
-                                    {/* Table 1: Opening Inv & End of Inv */}
-                                    <div className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
-                                      isChildZeroTeam 
-                                        ? 'divide-red-200 bg-red-100/40' 
-                                        : 'divide-primary/10 bg-primary/5'
-                                    }`}>
-                                      <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                        isChildZeroTeam ? 'hover:bg-red-200/30' : 'hover:bg-primary/5'
-                                      }`}>
-                                        <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                                          isChildZeroTeam ? 'text-red-700/60' : 'text-[#8E94B7]'
-                                        }`}>Opening Inv</span>
-                                        <span className={`font-black text-[10px] truncate w-full ${
-                                          isChildZeroTeam ? 'text-red-700' : 'text-[#181a2c]'
-                                        }`}>{formatNum(child.lastQty)}</span>
-                                      </div>
-                                      <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                        isChildZeroTeam ? 'hover:bg-red-200/30' : 'hover:bg-primary/5'
-                                      }`}>
-                                        <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                                          isChildZeroTeam ? 'text-red-700/60' : 'text-[#1d4ed8]/75'
-                                        }`}>End of Inv</span>
-                                        <span className={`font-black text-[10px] truncate w-full ${
-                                          isChildZeroTeam ? 'text-red-700' : 'text-[#1d4ed8]'
-                                        }`}>{formatNum(child.currentQty)}</span>
-                                      </div>
-                                    </div>
+                        <div className="mx-5 mb-3 mt-2 flex flex-row gap-1.5 md:gap-2">
+                          {/* Table 1: Opening Inv & End of Inv */}
+                          <div className="flex-[2] flex divide-x divide-white/20 bg-primary/95 shadow-[0_12px_32px_rgba(21,75,226,0.25)] rounded-[14px] overflow-hidden">
+                            <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
+                              <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                                Opening Inv
+                              </span>
+                              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                                {formatNum(row.lastQty)}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
+                              <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                                End of Inv
+                              </span>
+                              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                                {formatNum(row.currentQty)}
+                              </span>
+                            </div>
+                          </div>
 
-                                    {/* Table 2: Stock in, idle stock, POG */}
-                                    <div className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
-                                      isChildZeroTeam 
-                                        ? 'divide-red-200 bg-red-200/45' 
-                                        : 'divide-primary/10 bg-primary/10 border border-primary/10'
-                                    }`}>
-                                      <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                        isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-primary/15'
-                                      }`}>
-                                        <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                                          isChildZeroTeam ? 'text-red-800/70' : 'text-[#154be2]/80'
-                                        }`}>Stock in</span>
-                                        <span className={`font-black text-[10px] truncate w-full ${
-                                          isChildZeroTeam ? 'text-red-800' : 'text-[#154be2]'
-                                        }`}>{formatNum(child.sellIn)}</span>
+                          {/* Table 2: Stock in, idle stock, POG */}
+                          <div className="flex-[3] flex divide-x divide-white/20 bg-primary shadow-[0_12px_32px_rgba(21,75,226,0.35)] rounded-[14px] overflow-hidden">
+                            <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
+                              <span className="text-[8px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
+                                Stock in
+                              </span>
+                              <span className="font-semibold text-[10.5px] truncate w-full text-white">
+                                {formatNum(row.sellIn)}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
+                              <span className="text-[8px] font-bold uppercase tracking-wider text-amber-200 mb-0.5 truncate w-full">
+                                idle stock
+                              </span>
+                              <span className="font-semibold text-[10.5px] truncate w-full text-amber-100">
+                                {formatNum(row.idleStock)}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0 p-2 flex flex-col items-center justify-center text-center hover:bg-white/10 transition-colors">
+                              <span className="text-[8px] font-bold uppercase tracking-wider text-cyan-200 mb-0.5 truncate w-full">
+                                POG
+                              </span>
+                              <span className="font-semibold text-[10.5px] truncate w-full text-cyan-100 font-extrabold">
+                                {formatNum(row.pog)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {pogExpandedRows[row.name] &&
+                          row.children?.length > 0 && (
+                            <div className="pb-4 pt-3 border-t border-[#edecff] flex flex-col gap-3.5 px-5 bg-slate-50/50">
+                              {pogSubGroupBy === "subordinate"
+                                ? row.children.map((child: any) =>
+                                    renderRecursivePogSubordinate(child),
+                                  )
+                                : row.children.map((child, j) => {
+                                    const isChildZeroTeam =
+                                      child.lastQty === 0 &&
+                                      child.sellIn === 0 &&
+                                      child.sellOut === 0 &&
+                                      child.totalInv === 0 &&
+                                      child.currentQty === 0 &&
+                                      (child.idleStock || 0) === 0;
+                                    return (
+                                      <div
+                                        key={`${i}-${j}`}
+                                        className={`flex flex-col p-3.5 rounded-[18px] transition-all duration-200 ${
+                                          isChildZeroTeam
+                                            ? "bg-red-50/70 border border-red-200/60 shadow-[0_10px_28px_rgba(239,68,68,0.12)]"
+                                            : "bg-[#fbfaff] shadow-[0_10px_28px_rgba(21,75,226,0.18)]"
+                                        }`}
+                                      >
+                                        <div className="flex justify-between items-center mb-2 px-1 flex-wrap gap-2">
+                                          <div className="flex flex-col">
+                                            <span className="font-bold text-[11px] text-[#181a2c] uppercase pr-2 flex items-center gap-1.5 flex-wrap">
+                                              <span>
+                                                {renderMaybeChannelName(
+                                                  child.name,
+                                                )}
+                                              </span>
+                                              {isChildZeroTeam && (
+                                                <span className="text-[7.5px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                                  No Activity
+                                                </span>
+                                              )}
+                                              {pogSubGroupBy === "channel" &&
+                                                child.category && (
+                                                  <span className="text-[8px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full font-bold">
+                                                    {child.category}
+                                                  </span>
+                                                )}
+                                            </span>
+                                          </div>
+                                          <span
+                                            className={`font-bold text-[11.5px] shrink-0 ${isChildZeroTeam ? "text-red-600" : "text-primary"}`}
+                                          >
+                                            {formatNum(child.pog)}{" "}
+                                            <span className="text-[8.5px] text-[#8E94B7]">
+                                              POG
+                                            </span>
+                                          </span>
+                                        </div>
+                                        <div className="flex flex-row w-full gap-1.5 md:gap-2">
+                                          {/* Table 1: Opening Inv & End of Inv */}
+                                          <div
+                                            className={`flex-[2] flex divide-x rounded-[14px] overflow-hidden ${
+                                              isChildZeroTeam
+                                                ? "divide-red-200 bg-red-100/40"
+                                                : "divide-primary/10 bg-primary/5"
+                                            }`}
+                                          >
+                                            <div
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-200/30"
+                                                  : "hover:bg-primary/5"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700/60"
+                                                    : "text-[#8E94B7]"
+                                                }`}
+                                              >
+                                                Opening Inv
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700"
+                                                    : "text-[#181a2c]"
+                                                }`}
+                                              >
+                                                {formatNum(child.lastQty)}
+                                              </span>
+                                            </div>
+                                            <div
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-200/30"
+                                                  : "hover:bg-primary/5"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700/60"
+                                                    : "text-[#1d4ed8]/75"
+                                                }`}
+                                              >
+                                                End of Inv
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-700"
+                                                    : "text-[#1d4ed8]"
+                                                }`}
+                                              >
+                                                {formatNum(child.currentQty)}
+                                              </span>
+                                            </div>
+                                          </div>
+
+                                          {/* Table 2: Stock in, idle stock, POG */}
+                                          <div
+                                            className={`flex-[3] flex divide-x rounded-[14px] overflow-hidden ${
+                                              isChildZeroTeam
+                                                ? "divide-red-200 bg-red-200/45"
+                                                : "divide-primary/10 bg-primary/10 border border-primary/10"
+                                            }`}
+                                          >
+                                            <div
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-300/30"
+                                                  : "hover:bg-primary/15"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800/70"
+                                                    : "text-[#154be2]/80"
+                                                }`}
+                                              >
+                                                Stock in
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800"
+                                                    : "text-[#154be2]"
+                                                }`}
+                                              >
+                                                {formatNum(child.sellIn)}
+                                              </span>
+                                            </div>
+                                            <div
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-300/30"
+                                                  : "hover:bg-amber-100/60"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800/70"
+                                                    : "text-amber-800"
+                                                }`}
+                                              >
+                                                idle stock
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800"
+                                                    : "text-amber-700"
+                                                }`}
+                                              >
+                                                {formatNum(child.idleStock)}
+                                              </span>
+                                            </div>
+                                            <div
+                                              className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
+                                                isChildZeroTeam
+                                                  ? "hover:bg-red-300/30"
+                                                  : "hover:bg-emerald-100/60"
+                                              }`}
+                                            >
+                                              <span
+                                                className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800/70"
+                                                    : "text-emerald-800"
+                                                }`}
+                                              >
+                                                POG
+                                              </span>
+                                              <span
+                                                className={`font-black text-[10px] truncate w-full ${
+                                                  isChildZeroTeam
+                                                    ? "text-red-800"
+                                                    : "text-emerald-700 font-extrabold"
+                                                }`}
+                                              >
+                                                {formatNum(child.pog)}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
-                                      <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                        isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-amber-100/60'
-                                      }`}>
-                                        <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                                          isChildZeroTeam ? 'text-red-800/70' : 'text-amber-800'
-                                        }`}>idle stock</span>
-                                        <span className={`font-black text-[10px] truncate w-full ${
-                                          isChildZeroTeam ? 'text-red-800' : 'text-amber-700'
-                                        }`}>{formatNum(child.idleStock)}</span>
-                                      </div>
-                                      <div className={`flex-1 min-w-0 p-1.5 flex flex-col items-center justify-center text-center transition-colors ${
-                                        isChildZeroTeam ? 'hover:bg-red-300/30' : 'hover:bg-emerald-100/60'
-                                      }`}>
-                                        <span className={`text-[7.5px] font-bold uppercase truncate w-full tracking-wider mb-0.5 ${
-                                          isChildZeroTeam ? 'text-red-800/70' : 'text-emerald-800'
-                                        }`}>POG</span>
-                                        <span className={`font-black text-[10px] truncate w-full ${
-                                          isChildZeroTeam ? 'text-red-800' : 'text-emerald-700 font-extrabold'
-                                        }`}>{formatNum(child.pog)}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })
+                                    );
+                                  })}
+                            </div>
                           )}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                      </div>
+                    ))}
               </div>
             )}
-            
+
             {aggregatedPogData.length === 0 && (
               <div className="py-16 text-center flex flex-col items-center bg-white rounded-[24px] border border-[#edecff] shadow-sm">
-                 <span className="material-symbols-outlined text-[40px] text-[#8E94B7] mb-4">analytics</span>
-                 <p className="font-semibold text-[#8E94B7] text-xs">No data available for the selected filters.</p>
+                <span className="material-symbols-outlined text-[40px] text-[#8E94B7] mb-4">
+                  analytics
+                </span>
+                <p className="font-semibold text-[#8E94B7] text-xs">
+                  No data available for the selected filters.
+                </p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {activeTab === 'temp' && (
+      {activeTab === "temp" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300 animate-in">
           {consolidationSuccessMsg && (
             <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl px-5 py-3 text-xs font-bold flex items-center gap-2 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-              <span className="material-symbols-outlined text-emerald-600">check_circle</span>
+              <span className="material-symbols-outlined text-emerald-600">
+                check_circle
+              </span>
               {consolidationSuccessMsg}
             </div>
           )}
-          
+
           <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 ml-1">
             <div>
               <h1 className="text-xl font-bold text-[#181a2c] tracking-tight">
-                Review <span className="text-primary font-bold">Data (Temporary)</span>
+                Review{" "}
+                <span className="text-primary font-bold">Data (Temporary)</span>
               </h1>
-              <p className="text-xs text-[#8E94B7] mt-1 font-semibold">Menampilkan data checker, channel, hybrid, dan lot no secara komprehensif.</p>
+              <p className="text-xs text-[#8E94B7] mt-1 font-semibold">
+                Menampilkan data checker, channel, hybrid, dan lot no secara
+                komprehensif.
+              </p>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto shrink-0">
               {/* Preview Toggle Button */}
               <button
@@ -7010,15 +10409,15 @@ const Dashboard = ({
                   setExpandedTempRowId(null); // Close any expanded row during toggle
                 }}
                 className={`w-full sm:w-auto h-10 px-5 rounded-full font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.98] ${
-                  isTempProceeded 
-                    ? 'bg-amber-500 text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600' 
-                    : 'bg-[#181a2c] text-white shadow-[0_4px_14px_rgba(24,26,44,0.15)] hover:bg-[#252841]'
+                  isTempProceeded
+                    ? "bg-amber-500 text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:bg-amber-600"
+                    : "bg-[#181a2c] text-white shadow-[0_4px_14px_rgba(24,26,44,0.15)] hover:bg-[#252841]"
                 }`}
               >
                 <span className="material-symbols-outlined text-[18px]">
-                  {isTempProceeded ? 'visibility_off' : 'visibility'}
+                  {isTempProceeded ? "visibility_off" : "visibility"}
                 </span>
-                {isTempProceeded ? 'Matikan Preview' : 'Preview Konsolidasi'}
+                {isTempProceeded ? "Matikan Preview" : "Preview Konsolidasi"}
               </button>
 
               {/* Real Database Process Button */}
@@ -7029,15 +10428,19 @@ const Dashboard = ({
                 onClick={handleConsolidateDatabase}
                 className={`w-full sm:w-auto h-10 px-5 rounded-full font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.98] bg-emerald-600 text-white shadow-[0_4px_14px_rgba(16,185,129,0.3)] hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                <span className={`material-symbols-outlined text-[18px] ${isConsolidatingDb ? 'animate-spin' : ''}`}>
-                  {isConsolidatingDb ? 'sync' : 'auto_mode'}
+                <span
+                  className={`material-symbols-outlined text-[18px] ${isConsolidatingDb ? "animate-spin" : ""}`}
+                >
+                  {isConsolidatingDb ? "sync" : "auto_mode"}
                 </span>
-                {isConsolidatingDb ? 'Memproses...' : 'Proses Konsolidasi'}
+                {isConsolidatingDb ? "Memproses..." : "Proses Konsolidasi"}
               </button>
 
               {/* Quick Search Container */}
               <div className="relative w-full sm:w-64 shrink-0">
-                <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">search</span>
+                <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[18px]">
+                  search
+                </span>
                 <input
                   type="text"
                   placeholder="Cari data..."
@@ -7048,10 +10451,12 @@ const Dashboard = ({
                 {tempSearchQuery && (
                   <button
                     type="button"
-                    onClick={() => setTempSearchQuery('')}
+                    onClick={() => setTempSearchQuery("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 flex items-center justify-center cursor-pointer transition-colors"
                   >
-                    <span className="material-symbols-outlined text-[16px]">close</span>
+                    <span className="material-symbols-outlined text-[16px]">
+                      close
+                    </span>
                   </button>
                 )}
               </div>
@@ -7061,25 +10466,54 @@ const Dashboard = ({
           {/* Petunjuk Konsolidasi & Sinkronisasi */}
           <div className="mb-6 bg-amber-50/70 border border-amber-200/80 rounded-2xl p-5 shadow-sm ml-1 text-[#181a2c]">
             <div className="flex gap-3">
-              <span className="material-symbols-outlined text-[22px] text-amber-600 mt-0.5">info</span>
+              <span className="material-symbols-outlined text-[22px] text-amber-600 mt-0.5">
+                info
+              </span>
               <div className="flex-1">
-                <h3 className="text-xs font-black text-amber-900 uppercase tracking-wider mb-1">Panduan Konsolidasi Database (Sheet Working)</h3>
+                <h3 className="text-xs font-black text-amber-900 uppercase tracking-wider mb-1">
+                  Panduan Konsolidasi Database (Sheet Working)
+                </h3>
                 <p className="text-xs text-amber-800 leading-relaxed font-semibold">
-                  Gunakan tab ini untuk menggabungkan data ganda dengan Kombinasi <strong className="font-extrabold text-amber-950">Checker + Channel + Hybrid + Lot No</strong> yang sama menjadi satu baris tunggal, di mana nilai stok dipisahkan secara otomatis ke dalam kolom bulan yang tepat (April - Maret).
+                  Gunakan tab ini untuk menggabungkan data ganda dengan
+                  Kombinasi{" "}
+                  <strong className="font-extrabold text-amber-950">
+                    Checker + Channel + Hybrid + Lot No
+                  </strong>{" "}
+                  yang sama menjadi satu baris tunggal, di mana nilai stok
+                  dipisahkan secara otomatis ke dalam kolom bulan yang tepat
+                  (April - Maret).
                 </p>
                 <div className="mt-3 flex flex-col sm:flex-row gap-4 text-[11px] font-bold text-amber-900/90 border-t border-amber-200/40 pt-3">
                   <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-amber-700">visibility</span>
-                    <span><strong>Preview Konsolidasi:</strong> Simulasi visual di layar (client-side) sebelum disimpan.</span>
+                    <span className="material-symbols-outlined text-[16px] text-amber-700">
+                      visibility
+                    </span>
+                    <span>
+                      <strong>Preview Konsolidasi:</strong> Simulasi visual di
+                      layar (client-side) sebelum disimpan.
+                    </span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="material-symbols-outlined text-[16px] text-emerald-700">auto_mode</span>
-                    <span><strong>Proses Konsolidasi:</strong> Menyimpan/menggabungkan data secara permanen di Google Sheet.</span>
+                    <span className="material-symbols-outlined text-[16px] text-emerald-700">
+                      auto_mode
+                    </span>
+                    <span>
+                      <strong>Proses Konsolidasi:</strong>{" "}
+                      Menyimpan/menggabungkan data secara permanen di Google
+                      Sheet.
+                    </span>
                   </div>
                 </div>
                 <div className="mt-3.5 bg-emerald-50/75 border border-emerald-200/50 rounded-xl p-3 text-[11px] font-semibold text-emerald-900 leading-relaxed shadow-inner flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-emerald-600">cloud_done</span>
-                  <span><strong>Koneksi Langsung Aktif:</strong> Sistem sekarang terhubung langsung ke database Google Sheets melalui API resmi. Anda tidak perlu lagi menyalin file Apps Script manual atau melakukan langkah konfigurasi manual lainnya.</span>
+                  <span className="material-symbols-outlined text-[16px] text-emerald-600">
+                    cloud_done
+                  </span>
+                  <span>
+                    <strong>Koneksi Langsung Aktif:</strong> Sistem sekarang
+                    terhubung langsung ke database Google Sheets melalui API
+                    resmi. Anda tidak perlu lagi menyalin file Apps Script
+                    manual atau melakukan langkah konfigurasi manual lainnya.
+                  </span>
                 </div>
               </div>
             </div>
@@ -7087,79 +10521,188 @@ const Dashboard = ({
 
           {/* Stats Cards Row */}
           {(() => {
-            const INDO_MONTHS = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
+            const INDO_MONTHS = [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr",
+              "Mei",
+              "Jun",
+              "Jul",
+              "Ags",
+              "Sep",
+              "Okt",
+              "Nov",
+              "Des",
+            ];
 
             const getMonthIndexFromTimestamp = (timestamp: any): number => {
               if (!timestamp) return new Date().getMonth();
               if (timestamp instanceof Date) return timestamp.getMonth();
-              
+
               const str = String(timestamp).trim();
-              
-              if (str.includes('/')) {
+
+              if (str.includes("/")) {
                 const parts = str.split(/[\s/:]+/);
                 if (parts.length >= 2) {
                   const mVal = parseInt(parts[1], 10);
                   if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
                     return mVal - 1;
                   }
-                  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-                  const indMonths = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "agu", "ags", "sep", "okt", "nov", "des"];
+                  const months = [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "may",
+                    "jun",
+                    "jul",
+                    "aug",
+                    "sep",
+                    "oct",
+                    "nov",
+                    "dec",
+                  ];
+                  const indMonths = [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "mei",
+                    "jun",
+                    "jul",
+                    "agu",
+                    "ags",
+                    "sep",
+                    "okt",
+                    "nov",
+                    "des",
+                  ];
                   const lowerM = parts[1].toLowerCase();
-                  let m = months.findIndex(name => lowerM.startsWith(name));
-                  if (m === -1) m = indMonths.findIndex(name => lowerM.startsWith(name));
+                  let m = months.findIndex((name) => lowerM.startsWith(name));
+                  if (m === -1)
+                    m = indMonths.findIndex((name) => lowerM.startsWith(name));
                   if (m !== -1) return m;
                 }
               }
-              
-              if (str.includes('-')) {
+
+              if (str.includes("-")) {
                 const parts = str.split(/[\s\-:]+/);
                 if (parts.length >= 2) {
                   const mVal = parseInt(parts[1], 10);
                   if (!isNaN(mVal) && mVal >= 1 && mVal <= 12) {
                     return mVal - 1;
                   }
-                  const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
-                  const indMonths = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "agu", "ags", "sep", "okt", "nov", "des"];
+                  const months = [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "may",
+                    "jun",
+                    "jul",
+                    "aug",
+                    "sep",
+                    "oct",
+                    "nov",
+                    "dec",
+                  ];
+                  const indMonths = [
+                    "jan",
+                    "feb",
+                    "mar",
+                    "apr",
+                    "mei",
+                    "jun",
+                    "jul",
+                    "agu",
+                    "ags",
+                    "sep",
+                    "okt",
+                    "nov",
+                    "des",
+                  ];
                   const lowerM = parts[1].toLowerCase();
-                  let m = months.findIndex(name => lowerM.startsWith(name));
-                  if (m === -1) m = indMonths.findIndex(name => lowerM.startsWith(name));
+                  let m = months.findIndex((name) => lowerM.startsWith(name));
+                  if (m === -1)
+                    m = indMonths.findIndex((name) => lowerM.startsWith(name));
                   if (m !== -1) return m;
                 }
               }
-              
+
               const d = new Date(str);
               return !isNaN(d.getTime()) ? d.getMonth() : new Date().getMonth();
             };
 
-            const groupedMap: Record<string, {
-              id: string;
-              checker: string;
-              channel: string;
-              hybrid: string;
-              lot: string;
-              shippingDate: string;
-              expDate: string;
-              inputs: Array<{ tanggalInput: string; qty: number; id: string }>;
-              monthlyQty: number[];
-              totalQty: number;
-            }> = {};
+            const groupedMap: Record<
+              string,
+              {
+                id: string;
+                checker: string;
+                channel: string;
+                hybrid: string;
+                lot: string;
+                shippingDate: string;
+                expDate: string;
+                inputs: Array<{
+                  tanggalInput: string;
+                  qty: number;
+                  id: string;
+                }>;
+                monthlyQty: number[];
+                totalQty: number;
+              }
+            > = {};
 
-            const monthsKeys = ["jan", "feb", "mar", "apr", "mei", "jun", "jul", "ags", "sep", "okt", "nov", "des"];
+            const monthsKeys = [
+              "jan",
+              "feb",
+              "mar",
+              "apr",
+              "mei",
+              "jun",
+              "jul",
+              "ags",
+              "sep",
+              "okt",
+              "nov",
+              "des",
+            ];
 
-            (rawWorkingData && rawWorkingData.length > 0 ? rawWorkingData : workingData).forEach((item, index) => {
-              const checker = item.user || item.pic || 'Unknown';
-              const channel = item.kiosk || item.channel || item.toko || 'Unknown';
-              const hybrid = item.hybrid || item.hybrids || 'Unknown';
-              const lot = item.lot || 'Unknown';
+            (rawWorkingData && rawWorkingData.length > 0
+              ? rawWorkingData
+              : workingData
+            ).forEach((item, index) => {
+              const checker = item.user || item.pic || "Unknown";
+              const channel =
+                item.kiosk || item.channel || item.toko || "Unknown";
+              const hybrid = item.hybrid || item.hybrids || "Unknown";
+              const lot = item.lot || "Unknown";
               const key = `${checker}_${channel}_${hybrid}_${lot}`;
 
-              let shippingDate = item.drDate || item.shipping_date || item.shippingDate || item.dr_date || 'N/A';
-              let expDate = item.expired || item.exp_date || item.expDate || item.expired_date || 'N/A';
+              let shippingDate =
+                item.drDate ||
+                item.shipping_date ||
+                item.shippingDate ||
+                item.dr_date ||
+                "N/A";
+              let expDate =
+                item.expired ||
+                item.exp_date ||
+                item.expDate ||
+                item.expired_date ||
+                "N/A";
 
-              const isValidVal = (v: any) => v && v !== 'N/A' && v !== '-' && String(v).trim() !== '';
+              const isValidVal = (v: any) =>
+                v && v !== "N/A" && v !== "-" && String(v).trim() !== "";
 
               if (!isValidVal(shippingDate) || !isValidVal(expDate)) {
-                const matchedDr = drSalesData.find(dr => dr && dr.lot && cleanForMatch(dr.lot) === cleanForMatch(lot));
+                const matchedDr = drSalesData.find(
+                  (dr) =>
+                    dr &&
+                    dr.lot &&
+                    cleanForMatch(dr.lot) === cleanForMatch(lot),
+                );
                 if (matchedDr) {
                   if (!isValidVal(shippingDate) && matchedDr.drDate) {
                     shippingDate = matchedDr.drDate;
@@ -7186,8 +10729,11 @@ const Dashboard = ({
                 itemMonthlyQty[mIdx] = qtyVal;
               }
 
-              const itemTotal = itemMonthlyQty.reduce((acc, val) => acc + val, 0);
-              const tanggalInput = item.timestamp || 'N/A';
+              const itemTotal = itemMonthlyQty.reduce(
+                (acc, val) => acc + val,
+                0,
+              );
+              const tanggalInput = item.timestamp || "N/A";
               const inputId = item.id || `input_${index}`;
 
               if (!groupedMap[key]) {
@@ -7201,11 +10747,12 @@ const Dashboard = ({
                   expDate,
                   inputs: [],
                   monthlyQty: Array(12).fill(0),
-                  totalQty: 0
+                  totalQty: 0,
                 };
               } else {
                 const g = groupedMap[key];
-                const isValidVal = (v: any) => v && v !== 'N/A' && v !== '-' && String(v).trim() !== '';
+                const isValidVal = (v: any) =>
+                  v && v !== "N/A" && v !== "-" && String(v).trim() !== "";
                 if (!isValidVal(g.shippingDate) && isValidVal(shippingDate)) {
                   g.shippingDate = shippingDate;
                 }
@@ -7218,7 +10765,7 @@ const Dashboard = ({
               groupedMap[key].inputs.push({
                 id: inputId,
                 tanggalInput,
-                qty: qtyVal
+                qty: qtyVal,
               });
 
               // Sum monthly values
@@ -7230,7 +10777,7 @@ const Dashboard = ({
 
             const list = Object.values(groupedMap);
 
-            const filteredList = list.filter(item => {
+            const filteredList = list.filter((item) => {
               const q = tempSearchQuery.trim().toLowerCase();
               if (!q) return true;
               return (
@@ -7241,26 +10788,29 @@ const Dashboard = ({
               );
             });
 
-            const uniqueCheckers = new Set(filteredList.map(i => i.checker)).size;
-            const uniqueChannels = new Set(filteredList.map(i => i.channel)).size;
-            const uniqueHybrids = new Set(filteredList.map(i => i.hybrid)).size;
-            const uniqueLots = new Set(filteredList.map(i => i.lot)).size;
+            const uniqueCheckers = new Set(filteredList.map((i) => i.checker))
+              .size;
+            const uniqueChannels = new Set(filteredList.map((i) => i.channel))
+              .size;
+            const uniqueHybrids = new Set(filteredList.map((i) => i.hybrid))
+              .size;
+            const uniqueLots = new Set(filteredList.map((i) => i.lot)).size;
 
             // Handle Sorting
             const sortedList = [...filteredList].sort((a, b) => {
-              const valA = String(a[tempSortBy] || '').toLowerCase();
-              const valB = String(b[tempSortBy] || '').toLowerCase();
-              if (valA < valB) return tempSortOrder === 'asc' ? -1 : 1;
-              if (valA > valB) return tempSortOrder === 'asc' ? 1 : -1;
+              const valA = String(a[tempSortBy] || "").toLowerCase();
+              const valB = String(b[tempSortBy] || "").toLowerCase();
+              if (valA < valB) return tempSortOrder === "asc" ? -1 : 1;
+              if (valA > valB) return tempSortOrder === "asc" ? 1 : -1;
               return 0;
             });
 
             const toggleSort = (col: string) => {
               if (tempSortBy === col) {
-                setTempSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                setTempSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
               } else {
                 setTempSortBy(col);
-                setTempSortOrder('asc');
+                setTempSortOrder("asc");
               }
             };
 
@@ -7269,41 +10819,65 @@ const Dashboard = ({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white p-4 rounded-[20px] border border-[#edecff] shadow-sm flex items-center gap-3">
                     <div className="size-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-500 shrink-0">
-                      <span className="material-symbols-outlined text-md">assignment_ind</span>
+                      <span className="material-symbols-outlined text-md">
+                        assignment_ind
+                      </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Unik Checker</p>
-                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">{uniqueCheckers}</p>
+                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                        Unik Checker
+                      </p>
+                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">
+                        {uniqueCheckers}
+                      </p>
                     </div>
                   </div>
 
                   <div className="bg-white p-4 rounded-[20px] border border-[#edecff] shadow-sm flex items-center gap-3">
                     <div className="size-10 rounded-xl bg-sky-50 flex items-center justify-center text-sky-500 shrink-0">
-                      <span className="material-symbols-outlined text-md">store</span>
+                      <span className="material-symbols-outlined text-md">
+                        store
+                      </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Unik Channel</p>
-                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">{uniqueChannels}</p>
+                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                        Unik Channel
+                      </p>
+                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">
+                        {uniqueChannels}
+                      </p>
                     </div>
                   </div>
 
                   <div className="bg-white p-4 rounded-[20px] border border-[#edecff] shadow-sm flex items-center gap-3">
                     <div className="size-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-500 shrink-0">
-                      <span className="material-symbols-outlined text-md">category</span>
+                      <span className="material-symbols-outlined text-md">
+                        category
+                      </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Unik Hybrid</p>
-                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">{uniqueHybrids}</p>
+                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                        Unik Hybrid
+                      </p>
+                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">
+                        {uniqueHybrids}
+                      </p>
                     </div>
                   </div>
 
                   <div className="bg-white p-4 rounded-[20px] border border-[#edecff] shadow-sm flex items-center gap-3">
                     <div className="size-10 rounded-xl bg-purple-50 flex items-center justify-center text-purple-500 shrink-0">
-                      <span className="material-symbols-outlined text-md">layers</span>
+                      <span className="material-symbols-outlined text-md">
+                        layers
+                      </span>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Unik Lot No</p>
-                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">{uniqueLots}</p>
+                      <p className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                        Unik Lot No
+                      </p>
+                      <p className="text-sm font-bold text-[#181a2c] mt-0.5">
+                        {uniqueLots}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -7312,7 +10886,9 @@ const Dashboard = ({
                 <div className="bg-white rounded-[24px] border border-[#edecff] shadow-[0_8px_24px_rgba(24,26,44,0.02)] overflow-hidden">
                   {isTempProceeded && (
                     <div className="bg-amber-50 px-6 py-2.5 border-b border-amber-100 flex items-center gap-2 text-amber-800 text-[11px] font-bold">
-                      <span className="material-symbols-outlined text-[16px] animate-pulse text-amber-600">info</span>
+                      <span className="material-symbols-outlined text-[16px] animate-pulse text-amber-600">
+                        info
+                      </span>
                       Geser tabel ke samping untuk melihat seluruh kolom bulan ↔
                     </div>
                   )}
@@ -7323,39 +10899,74 @@ const Dashboard = ({
                           {isTempProceeded ? (
                             <>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider min-w-[130px]">
-                                <button type="button" onClick={() => toggleSort('checker')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("checker")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Checker
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'checker' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "checker"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider min-w-[150px]">
-                                <button type="button" onClick={() => toggleSort('channel')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("channel")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Channel Partner
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'channel' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "channel"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider min-w-[130px]">
-                                <button type="button" onClick={() => toggleSort('hybrid')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("hybrid")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Hybrid / Desc
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'hybrid' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "hybrid"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider min-w-[110px]">
-                                <button type="button" onClick={() => toggleSort('lot')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("lot")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Lot No
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'lot' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "lot"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               {INDO_MONTHS.map((m, mIdx) => (
-                                <th key={mIdx} className="py-4 px-3 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider text-center min-w-[65px]">
+                                <th
+                                  key={mIdx}
+                                  className="py-4 px-3 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider text-center min-w-[65px]"
+                                >
                                   {m}
                                 </th>
                               ))}
@@ -7366,34 +10977,66 @@ const Dashboard = ({
                           ) : (
                             <>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
-                                <button type="button" onClick={() => toggleSort('checker')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("checker")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Checker
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'checker' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "checker"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
-                                <button type="button" onClick={() => toggleSort('channel')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("channel")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Channel Partner
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'channel' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "channel"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
-                                <button type="button" onClick={() => toggleSort('hybrid')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("hybrid")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Hybrid / Desc
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'hybrid' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "hybrid"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
                               <th className="py-4 px-6 text-[10px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
-                                <button type="button" onClick={() => toggleSort('lot')} className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSort("lot")}
+                                  className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer text-left focus:outline-none"
+                                >
                                   Lot No
                                   <span className="material-symbols-outlined text-[14px]">
-                                    {tempSortBy === 'lot' ? (tempSortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more'}
+                                    {tempSortBy === "lot"
+                                      ? tempSortOrder === "asc"
+                                        ? "arrow_upward"
+                                        : "arrow_downward"
+                                      : "unfold_more"}
                                   </span>
                                 </button>
                               </th>
@@ -7407,13 +11050,18 @@ const Dashboard = ({
                             const isExpanded = expandedTempRowId === item.id;
                             if (isTempProceeded) {
                               return (
-                                <tr key={item.id} className="hover:bg-[#fbfbfb] transition-colors">
+                                <tr
+                                  key={item.id}
+                                  className="hover:bg-[#fbfbfb] transition-colors"
+                                >
                                   <td className="py-4 px-6 select-text">
                                     <div className="flex items-center gap-2.5">
                                       <div className="size-7 rounded-lg bg-indigo-50 text-indigo-600 font-bold text-[10px] flex items-center justify-center uppercase shrink-0 shadow-sm animate-in fade-in zoom-in-95 duration-150">
                                         {String(item.checker).substring(0, 2)}
                                       </div>
-                                      <span className="truncate max-w-[150px] font-bold text-[#181a2c]">{item.checker}</span>
+                                      <span className="truncate max-w-[150px] font-bold text-[#181a2c]">
+                                        {item.checker}
+                                      </span>
                                     </div>
                                   </td>
                                   <td className="py-4 px-6 text-[#5e617d] truncate max-w-[180px] select-text">
@@ -7430,13 +11078,18 @@ const Dashboard = ({
                                     </span>
                                   </td>
                                   {item.monthlyQty.map((val, mIdx) => (
-                                    <td key={mIdx} className="py-4 px-3 text-center">
+                                    <td
+                                      key={mIdx}
+                                      className="py-4 px-3 text-center"
+                                    >
                                       {val > 0 ? (
                                         <span className="bg-primary/5 text-primary text-[10px] px-2 py-0.5 rounded font-extrabold inline-block scale-100 hover:scale-105 duration-100 border border-primary/5">
                                           {val.toLocaleString()}
                                         </span>
                                       ) : (
-                                        <span className="text-[#c1c4db] font-normal">-</span>
+                                        <span className="text-[#c1c4db] font-normal">
+                                          -
+                                        </span>
                                       )}
                                     </td>
                                   ))}
@@ -7450,15 +11103,28 @@ const Dashboard = ({
                             // Otherwise, normal row with expandability
                             return (
                               <React.Fragment key={item.id}>
-                                <tr 
-                                  onClick={() => setExpandedTempRowId(isExpanded ? null : item.id)}
+                                <tr
+                                  onClick={() =>
+                                    setExpandedTempRowId(
+                                      isExpanded ? null : item.id,
+                                    )
+                                  }
                                   className={`hover:bg-[#fbfbfb] border-l-4 transition-all cursor-pointer select-none ${
-                                    isExpanded ? 'bg-primary/[0.02] border-primary' : 'border-transparent'
+                                    isExpanded
+                                      ? "bg-primary/[0.02] border-primary"
+                                      : "border-transparent"
                                   }`}
                                 >
                                   <td className="py-4 px-6 select-text">
                                     <div className="flex items-center gap-2.5">
-                                      <span className="material-symbols-outlined text-[20px] text-[#8E94B7] transition-transform duration-300 shrink-0 select-none" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none' }}>
+                                      <span
+                                        className="material-symbols-outlined text-[20px] text-[#8E94B7] transition-transform duration-300 shrink-0 select-none"
+                                        style={{
+                                          transform: isExpanded
+                                            ? "rotate(90deg)"
+                                            : "none",
+                                        }}
+                                      >
                                         chevron_right
                                       </span>
                                       <div className="size-7 rounded-lg bg-indigo-50 text-indigo-600 font-bold text-[10px] flex items-center justify-center uppercase shrink-0 shadow-sm relative">
@@ -7469,7 +11135,9 @@ const Dashboard = ({
                                           </span>
                                         )}
                                       </div>
-                                      <span className="truncate max-w-[150px] font-bold text-[#181a2c]">{item.checker}</span>
+                                      <span className="truncate max-w-[150px] font-bold text-[#181a2c]">
+                                        {item.checker}
+                                      </span>
                                     </div>
                                   </td>
                                   <td className="py-4 px-6 text-[#5e617d] truncate max-w-[180px] select-text">
@@ -7491,59 +11159,99 @@ const Dashboard = ({
                                     <td colSpan={4} className="py-3 px-6">
                                       <div className="p-5 bg-white rounded-2xl border border-[#edecff] shadow-sm animate-in slide-in-from-top-3 duration-200">
                                         <h4 className="text-[10.5px] font-extrabold text-primary uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-                                          <span className="material-symbols-outlined text-[16px]">calendar_today</span> Detail Tanggal Input & Qty
+                                          <span className="material-symbols-outlined text-[16px]">
+                                            calendar_today
+                                          </span>{" "}
+                                          Detail Tanggal Input & Qty
                                         </h4>
-                                        
+
                                         {/* Shipping Date & Exp Date Detail Cards */}
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                                           <div className="flex items-center gap-3 bg-slate-50 border border-[#edecff] rounded-xl p-3">
                                             <div className="size-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                                              <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                                              <span className="material-symbols-outlined text-[18px]">
+                                                local_shipping
+                                              </span>
                                             </div>
                                             <div className="min-w-0">
-                                              <p className="text-[9px] font-extrabold text-[#8E94B7] uppercase tracking-wider">Shipping Date</p>
-                                              <p className="text-xs font-black text-[#181a2c] mt-0.5">{item.shippingDate || 'N/A'}</p>
+                                              <p className="text-[9px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
+                                                Shipping Date
+                                              </p>
+                                              <p className="text-xs font-black text-[#181a2c] mt-0.5">
+                                                {item.shippingDate || "N/A"}
+                                              </p>
                                             </div>
                                           </div>
                                           <div className="flex items-center gap-3 bg-slate-50 border border-[#edecff] rounded-xl p-3">
                                             <div className="size-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
-                                              <span className="material-symbols-outlined text-[18px]">event_busy</span>
+                                              <span className="material-symbols-outlined text-[18px]">
+                                                event_busy
+                                              </span>
                                             </div>
                                             <div className="min-w-0">
-                                              <p className="text-[9px] font-extrabold text-[#8E94B7] uppercase tracking-wider">Exp Date</p>
-                                              <p className="text-xs font-black text-rose-700 mt-0.5">{item.expDate || 'N/A'}</p>
+                                              <p className="text-[9px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
+                                                Exp Date
+                                              </p>
+                                              <p className="text-xs font-black text-rose-700 mt-0.5">
+                                                {item.expDate || "N/A"}
+                                              </p>
                                             </div>
                                           </div>
                                         </div>
 
                                         <h4 className="text-[10.5px] font-extrabold text-primary uppercase tracking-widest mb-3.5 flex items-center gap-1.5">
-                                          <span className="material-symbols-outlined text-[16px]">calendar_today</span> Detail Tanggal Input & Qty
+                                          <span className="material-symbols-outlined text-[16px]">
+                                            calendar_today
+                                          </span>{" "}
+                                          Detail Tanggal Input & Qty
                                         </h4>
                                         <div className="overflow-hidden rounded-xl border border-[#edecff] bg-white">
                                           <table className="w-full text-left border-collapse">
                                             <thead>
                                               <tr className="bg-slate-50 border-b border-[#edecff] text-[9.5px] font-extrabold text-[#8E94B7] uppercase tracking-wider">
-                                                <th className="py-2.5 px-4 w-12 text-center">No</th>
-                                                <th className="py-2.5 px-4">Tanggal Input</th>
-                                                <th className="py-2.5 px-4 text-right">Stok / Qty (Kg)</th>
+                                                <th className="py-2.5 px-4 w-12 text-center">
+                                                  No
+                                                </th>
+                                                <th className="py-2.5 px-4">
+                                                  Tanggal Input
+                                                </th>
+                                                <th className="py-2.5 px-4 text-right">
+                                                  Stok / Qty (Kg)
+                                                </th>
                                               </tr>
                                             </thead>
                                             <tbody className="divide-y divide-[#f2f1ff] text-xs font-semibold text-[#181a2c]">
-                                              {item.inputs.map((input, inputIdx) => (
-                                                <tr key={input.id || inputIdx} className="hover:bg-slate-50/50 transition-colors">
-                                                  <td className="py-3 px-4 text-[#8E94B7] text-center font-mono text-[11px]">{inputIdx + 1}</td>
-                                                  <td className="py-3 px-4 font-mono text-[#5e617d] select-all">{input.tanggalInput}</td>
-                                                  <td className="py-3 px-4 font-extrabold text-right text-primary select-all">
-                                                    {input.qty.toLocaleString()} Kg
-                                                  </td>
-                                                </tr>
-                                              ))}
+                                              {item.inputs.map(
+                                                (input, inputIdx) => (
+                                                  <tr
+                                                    key={input.id || inputIdx}
+                                                    className="hover:bg-slate-50/50 transition-colors"
+                                                  >
+                                                    <td className="py-3 px-4 text-[#8E94B7] text-center font-mono text-[11px]">
+                                                      {inputIdx + 1}
+                                                    </td>
+                                                    <td className="py-3 px-4 font-mono text-[#5e617d] select-all">
+                                                      {input.tanggalInput}
+                                                    </td>
+                                                    <td className="py-3 px-4 font-extrabold text-right text-primary select-all">
+                                                      {input.qty.toLocaleString()}{" "}
+                                                      Kg
+                                                    </td>
+                                                  </tr>
+                                                ),
+                                              )}
                                             </tbody>
                                             <tfoot>
                                               <tr className="bg-slate-50/30 border-t border-[#edecff] font-bold text-[#181a2c] text-xs">
-                                                <td colSpan={2} className="py-2.5 px-4 text-[10px] uppercase font-extrabold text-[#8E94B7] text-left">Total Akumulasi</td>
+                                                <td
+                                                  colSpan={2}
+                                                  className="py-2.5 px-4 text-[10px] uppercase font-extrabold text-[#8E94B7] text-left"
+                                                >
+                                                  Total Akumulasi
+                                                </td>
                                                 <td className="py-2.5 px-4 text-right font-extrabold text-primary select-all text-sm">
-                                                  {item.totalQty.toLocaleString()} Kg
+                                                  {item.totalQty.toLocaleString()}{" "}
+                                                  Kg
                                                 </td>
                                               </tr>
                                             </tfoot>
@@ -7558,36 +11266,53 @@ const Dashboard = ({
                           })
                         ) : (
                           <tr>
-                            <td colSpan={isTempProceeded ? 17 : 4} className="py-16 text-center text-[#8E94B7] font-medium">
-                              Tidak ada data yang cocok dengan kriteria pencarian.
+                            <td
+                              colSpan={isTempProceeded ? 17 : 4}
+                              className="py-16 text-center text-[#8E94B7] font-medium"
+                            >
+                              Tidak ada data yang cocok dengan kriteria
+                              pencarian.
                             </td>
                           </tr>
                         )}
                       </tbody>
-                      {isTempProceeded && sortedList.length > 0 && (() => {
-                        const monthColumnTotals = Array(12).fill(0);
-                        sortedList.forEach(item => {
-                          item.monthlyQty.forEach((val, idx) => {
-                            monthColumnTotals[idx] += val;
+                      {isTempProceeded &&
+                        sortedList.length > 0 &&
+                        (() => {
+                          const monthColumnTotals = Array(12).fill(0);
+                          sortedList.forEach((item) => {
+                            item.monthlyQty.forEach((val, idx) => {
+                              monthColumnTotals[idx] += val;
+                            });
                           });
-                        });
-                        const granTotal = sortedList.reduce((sum, item) => sum + item.totalQty, 0);
-                        return (
-                          <tfoot>
-                            <tr className="bg-[#fafbfe]/80 border-t border-[#edecff] font-bold text-[#181a2c] text-xs">
-                              <td colSpan={4} className="py-3 px-6 text-[10px] uppercase font-extrabold text-[#8E94B7] text-left">Total Kolom</td>
-                              {monthColumnTotals.map((tot, idx) => (
-                                <td key={idx} className="py-3 px-3 text-center font-extrabold text-[#154be2] text-[11px]">
-                                  {tot > 0 ? tot.toLocaleString() : '-'}
+                          const granTotal = sortedList.reduce(
+                            (sum, item) => sum + item.totalQty,
+                            0,
+                          );
+                          return (
+                            <tfoot>
+                              <tr className="bg-[#fafbfe]/80 border-t border-[#edecff] font-bold text-[#181a2c] text-xs">
+                                <td
+                                  colSpan={4}
+                                  className="py-3 px-6 text-[10px] uppercase font-extrabold text-[#8E94B7] text-left"
+                                >
+                                  Total Kolom
                                 </td>
-                              ))}
-                              <td className="py-3 px-6 text-right font-extrabold text-primary select-all text-xs">
-                                {granTotal.toLocaleString()} Kg
-                              </td>
-                            </tr>
-                          </tfoot>
-                        );
-                      })()}
+                                {monthColumnTotals.map((tot, idx) => (
+                                  <td
+                                    key={idx}
+                                    className="py-3 px-3 text-center font-extrabold text-[#154be2] text-[11px]"
+                                  >
+                                    {tot > 0 ? tot.toLocaleString() : "-"}
+                                  </td>
+                                ))}
+                                <td className="py-3 px-6 text-right font-extrabold text-primary select-all text-xs">
+                                  {granTotal.toLocaleString()} Kg
+                                </td>
+                              </tr>
+                            </tfoot>
+                          );
+                        })()}
                     </table>
                   </div>
                   {sortedList.length > 0 && (
@@ -7601,75 +11326,110 @@ const Dashboard = ({
           })()}
         </div>
       )}
-      <LogoutConfirmModal isOpen={isLogoutModalOpen} onClose={() => setIsLogoutModalOpen(false)} onConfirm={onLogout} />
+      <LogoutConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={onLogout}
+      />
     </div>
   );
 };
 
 // Login Screen Component
 const LoginScreen = ({ onLogin }) => {
-  const [name, setName] = useState('aditya');
-  const [password, setPassword] = useState('123');
-  const [error, setError] = useState('');
+  const [name, setName] = useState("aditya");
+  const [password, setPassword] = useState("123");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isManual, setIsManual] = useState(false);
-  const [loggingInUser, setLoggingInUser] = useState('');
+  const [loggingInUser, setLoggingInUser] = useState("");
 
   const handleLoginSubmit = async () => {
-    setError('');
+    setError("");
     setLoading(true);
-    
+
     try {
       const result = await onLogin(name, password);
       if (!result.success) {
-        setError(result.error || 'Username atau password salah.');
+        setError(result.error || "Username atau password salah.");
       }
     } catch {
-      setError('Terjadi kesalahan jaringan.');
+      setError("Terjadi kesalahan jaringan.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleQuickLogin = async (selectedName) => {
-    setError('');
+    setError("");
     setLoading(true);
     setLoggingInUser(selectedName);
-    
+
     try {
-      const result = await onLogin(selectedName, 'bypass_password');
+      const result = await onLogin(selectedName, "bypass_password");
       if (!result.success) {
-        setError(result.error || 'Username tidak ditemukan di database.');
+        setError(result.error || "Username tidak ditemukan di database.");
       }
     } catch {
-      setError('Terjadi kesalahan jaringan saat mencoba masuk.');
+      setError("Terjadi kesalahan jaringan saat mencoba masuk.");
     } finally {
       setLoading(false);
-      setLoggingInUser('');
+      setLoggingInUser("");
     }
   };
 
   const TEMP_USERS = [
-    { name: 'Aditya Wiratama', position: 'Business Analyst', color: 'from-indigo-500 to-cyan-500', initial: 'AD' },
-    { name: 'Suryanto Budi Santoso', position: 'Regional Sales Manager', color: 'from-emerald-500 to-teal-600', initial: 'SBS' },
-    { name: 'Christien Yunianto', position: 'Area Sales Manager', color: 'from-amber-500 to-orange-600', initial: 'CY' },
-    { name: 'Agus Herdianto', position: 'Sales Representative', color: 'from-rose-500 to-pink-500', initial: 'AH' },
-    { name: 'Listianto', position: 'Field Officer', color: 'from-violet-500 to-fuchsia-600', initial: 'LI' }
+    {
+      name: "Aditya Wiratama",
+      position: "Business Analyst",
+      color: "from-indigo-500 to-cyan-500",
+      initial: "AD",
+    },
+    {
+      name: "Suryanto Budi Santoso",
+      position: "Regional Sales Manager",
+      color: "from-emerald-500 to-teal-600",
+      initial: "SBS",
+    },
+    {
+      name: "Christien Yunianto",
+      position: "Area Sales Manager",
+      color: "from-amber-500 to-orange-600",
+      initial: "CY",
+    },
+    {
+      name: "Agus Herdianto",
+      position: "Sales Representative",
+      color: "from-rose-500 to-pink-500",
+      initial: "AH",
+    },
+    {
+      name: "Listianto",
+      position: "Field Officer",
+      color: "from-violet-500 to-fuchsia-600",
+      initial: "LI",
+    },
   ];
 
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] font-sans flex items-center justify-center p-6 bg-gradient-to-br from-[#F2E7FE] via-[#fbf8ff] to-[#edecff]">
       <div className="glass-panel w-full max-w-sm rounded-[24px] p-8 shadow-[0_20px_40px_rgba(24,26,44,0.06)] border border-white/60 animate-in fade-in zoom-in-95 duration-500">
         <div className="size-24 bg-gradient-to-br from-primary to-cyan-400 rounded-[28px] mx-auto mb-5 shadow-[0_12px_32px_rgba(21,75,226,0.3)] flex items-center justify-center text-white p-3">
-           <AdvantaLogo className="w-[64px] h-[64px] text-white" />
+          <AdvantaLogo className="w-[64px] h-[64px] text-white" />
         </div>
-        <h1 className="text-xl font-bold text-center text-[#181a2c] tracking-tight mb-1 uppercase">ADVANTA CHANNEL PARTNER</h1>
-        <p className="text-[11px] text-center text-[#8E94B7] font-semibold uppercase tracking-widest mb-6">Inventory & POG Workspace</p>
-        
+        <h1 className="text-xl font-bold text-center text-[#181a2c] tracking-tight mb-1 uppercase">
+          ADVANTA CHANNEL PARTNER
+        </h1>
+        <p className="text-[11px] text-center text-[#8E94B7] font-semibold uppercase tracking-widest mb-6">
+          Inventory & POG Workspace
+        </p>
+
         <div className="space-y-4">
           {error && (
             <div className="bg-red-50 text-red-500 font-semibold text-xs px-4 py-2.5 rounded-full border border-red-100 flex items-center gap-2 animate-in fade-in duration-300">
-              <span className="material-symbols-outlined text-sm shrink-0">error</span>
+              <span className="material-symbols-outlined text-sm shrink-0">
+                error
+              </span>
               <span className="truncate">{error}</span>
             </div>
           )}
@@ -7678,10 +11438,14 @@ const LoginScreen = ({ onLogin }) => {
             // Quick Access / Button List
             <div className="space-y-3">
               <div className="flex items-center justify-between mb-1 px-1">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">Quick Login PIC</label>
-                <span className="text-[9px] bg-indigo-50 text-[#4F46E5] font-semibold px-2 py-0.5 rounded-full border border-indigo-100">Temp Mode</span>
+                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
+                  Quick Login PIC
+                </label>
+                <span className="text-[9px] bg-indigo-50 text-[#4F46E5] font-semibold px-2 py-0.5 rounded-full border border-indigo-100">
+                  Temp Mode
+                </span>
               </div>
-              
+
               <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
                 {TEMP_USERS.map((user) => {
                   const isUserLoggingIn = loggingInUser === user.name;
@@ -7692,10 +11456,12 @@ const LoginScreen = ({ onLogin }) => {
                       disabled={loading}
                       className="w-full flex items-center gap-3 bg-white hover:bg-slate-50 border border-slate-100 hover:border-slate-200/80 rounded-2xl p-3 text-left transition-all duration-200 hover:shadow-[0_4px_12px_rgba(21,75,226,0.04)] active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none group relative"
                     >
-                      <div className={`size-10 rounded-xl bg-gradient-to-br ${user.color} flex items-center justify-center text-white text-xs font-bold shadow-md uppercase shrink-0`}>
+                      <div
+                        className={`size-10 rounded-xl bg-gradient-to-br ${user.color} flex items-center justify-center text-white text-xs font-bold shadow-md uppercase shrink-0`}
+                      >
                         {user.initial}
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-[12.5px] text-[#181a2c] group-hover:text-primary transition-colors truncate">
                           {user.name}
@@ -7707,12 +11473,29 @@ const LoginScreen = ({ onLogin }) => {
 
                       <div className="shrink-0 text-slate-300 group-hover:text-primary transition-colors mr-1">
                         {isUserLoggingIn ? (
-                          <svg className="animate-spin h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          <svg
+                            className="animate-spin h-5 w-5 text-primary"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                            />
                           </svg>
                         ) : (
-                          <span className="material-symbols-outlined text-[20px] leading-none">chevron_right</span>
+                          <span className="material-symbols-outlined text-[20px] leading-none">
+                            chevron_right
+                          </span>
                         )}
                       </div>
                     </button>
@@ -7735,40 +11518,61 @@ const LoginScreen = ({ onLogin }) => {
             // Manual Form
             <div className="space-y-4">
               <div>
-                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">Username / PIC Name</label>
-                <input 
-                  type="text" 
+                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
+                  Username / PIC Name
+                </label>
+                <input
+                  type="text"
                   value={name}
-                  onChange={e => setName(e.target.value)}
+                  onChange={(e) => setName(e.target.value)}
                   disabled={loading}
                   className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] mb-4 disabled:opacity-50"
                   placeholder="Enter your name..."
                 />
-                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">Password</label>
-                <input 
-                  type="password" 
+                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
+                  Password
+                </label>
+                <input
+                  type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
                   className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] disabled:opacity-50"
                   placeholder="Enter password..."
                 />
               </div>
 
-              <button 
+              <button
                 onClick={handleLoginSubmit}
-                disabled={name.trim() === '' || password.trim() === '' || loading}
+                disabled={
+                  name.trim() === "" || password.trim() === "" || loading
+                }
                 className={`w-full h-14 rounded-full font-semibold text-xs uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 ${
-                  name.trim() === '' || password.trim() === '' || loading
-                    ? 'bg-[#e0e0fa] text-[#8E94B7] cursor-not-allowed shadow-none' 
-                    : 'bg-gradient-to-r from-primary to-cyan-400 text-white hover:opacity-95 shadow-[0_12px_28px_rgba(21,75,226,0.35)]'
+                  name.trim() === "" || password.trim() === "" || loading
+                    ? "bg-[#e0e0fa] text-[#8E94B7] cursor-not-allowed shadow-none"
+                    : "bg-gradient-to-r from-primary to-cyan-400 text-white hover:opacity-95 shadow-[0_12px_28px_rgba(21,75,226,0.35)]"
                 }`}
               >
                 {loading ? (
                   <>
-                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    <svg
+                      className="animate-spin h-5 w-5 text-white"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
                     </svg>
                     <span>Logging In...</span>
                   </>
@@ -7796,35 +11600,82 @@ const LoginScreen = ({ onLogin }) => {
 };
 
 const OFFLINE_EMPLOYEES = [
-  { name: 'Aditya Wiratama', position: 'Business Analyst', province: '-', level: 1, upline: '-', area: 'SEMUA AREA' },
-  { name: 'Suryanto Budi Santoso', position: 'Sales Manager', province: 'JAWA TIMUR', level: 2, upline: '-', area: 'JAWA TIMUR' },
-  { name: 'Christien Yunianto', position: 'Area Sales Manager', province: 'JAWA TIMUR', level: 3, upline: 'Suryanto Budi Santoso', area: 'KEDIRI' },
-  { name: 'Agus Herdianto', position: 'Sales Agronomist', province: 'JAWA TIMUR', level: 4, upline: 'Christien Yunianto', area: 'KEDIRI 1' },
-  { name: 'Listianto', position: 'Business Solution', province: 'JAWA TIMUR', level: 5, upline: 'Agus Herdianto', area: 'KEDIRI 2' }
+  {
+    name: "Aditya Wiratama",
+    position: "Business Analyst",
+    province: "-",
+    level: 1,
+    upline: "-",
+    area: "SEMUA AREA",
+  },
+  {
+    name: "Suryanto Budi Santoso",
+    position: "Sales Manager",
+    province: "JAWA TIMUR",
+    level: 2,
+    upline: "-",
+    area: "JAWA TIMUR",
+  },
+  {
+    name: "Christien Yunianto",
+    position: "Area Sales Manager",
+    province: "JAWA TIMUR",
+    level: 3,
+    upline: "Suryanto Budi Santoso",
+    area: "KEDIRI",
+  },
+  {
+    name: "Agus Herdianto",
+    position: "Sales Agronomist",
+    province: "JAWA TIMUR",
+    level: 4,
+    upline: "Christien Yunianto",
+    area: "KEDIRI 1",
+  },
+  {
+    name: "Listianto",
+    position: "Business Solution",
+    province: "JAWA TIMUR",
+    level: 5,
+    upline: "Agus Herdianto",
+    area: "KEDIRI 2",
+  },
 ];
 
 const OFFLINE_KIOSKS = [
-  { name: 'Kios Tani Sejahtera', pic: 'Aditya Wiratama', category: 'Distributor' },
-  { name: 'Kios Madu Mulya', pic: 'Listianto', category: 'R1' },
-  { name: 'Kios Berkah Subur', pic: 'Listianto', category: 'R2' },
-  { name: 'Toko Makmur Tani', pic: 'Agus Herdianto', category: 'R1' },
-  { name: 'Kios Tani Harapan', pic: 'Agus Herdianto', category: 'R2' },
-  { name: 'Toko Bunga Makmur', pic: 'Christien Yunianto', category: 'Distributor' },
-  { name: 'Kios Sumber Makmur', pic: 'Suryanto Budi Santoso', category: 'Silver' },
-  { name: 'Toko Padi Mas', pic: 'Listianto', category: 'Gold' }
+  {
+    name: "Kios Tani Sejahtera",
+    pic: "Aditya Wiratama",
+    category: "Distributor",
+  },
+  { name: "Kios Madu Mulya", pic: "Listianto", category: "R1" },
+  { name: "Kios Berkah Subur", pic: "Listianto", category: "R2" },
+  { name: "Toko Makmur Tani", pic: "Agus Herdianto", category: "R1" },
+  { name: "Kios Tani Harapan", pic: "Agus Herdianto", category: "R2" },
+  {
+    name: "Toko Bunga Makmur",
+    pic: "Christien Yunianto",
+    category: "Distributor",
+  },
+  {
+    name: "Kios Sumber Makmur",
+    pic: "Suryanto Budi Santoso",
+    category: "Silver",
+  },
+  { name: "Toko Padi Mas", pic: "Listianto", category: "Gold" },
 ];
 
 const OFFLINE_WORKING_DATA = [
   {
-    id: 'off_1',
-    timestamp: '15/06/2026 10:00:00',
-    kiosk: 'Kios Madu Mulya',
-    lot: 'ADV53878',
-    hybrid: 'ADV 112',
-    crops: 'Corn',
-    condition: 'tetap',
+    id: "off_1",
+    timestamp: "15/06/2026 10:00:00",
+    kiosk: "Kios Madu Mulya",
+    lot: "ADV53878",
+    hybrid: "ADV 112",
+    crops: "Corn",
+    condition: "tetap",
     stock: 1200,
-    user: 'Listianto',
+    user: "Listianto",
     lastQty: 1000,
     currentQty: 1200,
     pog: 900,
@@ -7832,21 +11683,43 @@ const OFFLINE_WORKING_DATA = [
     sellOut: 800,
     totalInv: 1200,
     idleStock: 300,
-    drDate: '2026-01-20',
-    expired: '2027-01-20',
-    jan: 100, feb: 120, mar: 150, apr: 110, mei: 130, jun: 140, jul: 150, ags: 0, sep: 0, okt: 0, nov: 0, des: 0,
-    upd_jan: '', upd_feb: '', upd_mar: '', upd_apr: 'sales', upd_mei: 'sales', upd_jun: 'sales', upd_jul: '', upd_ags: '', upd_sep: '', upd_okt: '', upd_nov: '', upd_des: ''
+    drDate: "2026-01-20",
+    expired: "2027-01-20",
+    jan: 100,
+    feb: 120,
+    mar: 150,
+    apr: 110,
+    mei: 130,
+    jun: 140,
+    jul: 150,
+    ags: 0,
+    sep: 0,
+    okt: 0,
+    nov: 0,
+    des: 0,
+    upd_jan: "",
+    upd_feb: "",
+    upd_mar: "",
+    upd_apr: "sales",
+    upd_mei: "sales",
+    upd_jun: "sales",
+    upd_jul: "",
+    upd_ags: "",
+    upd_sep: "",
+    upd_okt: "",
+    upd_nov: "",
+    upd_des: "",
   },
   {
-    id: 'off_2',
-    timestamp: '15/06/2026 10:15:00',
-    kiosk: 'Kios Berkah Subur',
-    lot: 'ADV11099',
-    hybrid: 'ADV 205',
-    crops: 'Corn',
-    condition: 'tetap',
+    id: "off_2",
+    timestamp: "15/06/2026 10:15:00",
+    kiosk: "Kios Berkah Subur",
+    lot: "ADV11099",
+    hybrid: "ADV 205",
+    crops: "Corn",
+    condition: "tetap",
     stock: 850,
-    user: 'Listianto',
+    user: "Listianto",
     lastQty: 800,
     currentQty: 850,
     pog: 700,
@@ -7854,21 +11727,43 @@ const OFFLINE_WORKING_DATA = [
     sellOut: 650,
     totalInv: 850,
     idleStock: 150,
-    drDate: '2026-02-15',
-    expired: '2027-02-15',
-    jan: 80, feb: 90, mar: 110, apr: 85, mei: 95, jun: 100, jul: 90, ags: 0, sep: 0, okt: 0, nov: 0, des: 0,
-    upd_jan: '', upd_feb: '', upd_mar: '', upd_apr: 'sales', upd_mei: 'sales', upd_jun: 'sales', upd_jul: '', upd_ags: '', upd_sep: '', upd_okt: '', upd_nov: '', upd_des: ''
+    drDate: "2026-02-15",
+    expired: "2027-02-15",
+    jan: 80,
+    feb: 90,
+    mar: 110,
+    apr: 85,
+    mei: 95,
+    jun: 100,
+    jul: 90,
+    ags: 0,
+    sep: 0,
+    okt: 0,
+    nov: 0,
+    des: 0,
+    upd_jan: "",
+    upd_feb: "",
+    upd_mar: "",
+    upd_apr: "sales",
+    upd_mei: "sales",
+    upd_jun: "sales",
+    upd_jul: "",
+    upd_ags: "",
+    upd_sep: "",
+    upd_okt: "",
+    upd_nov: "",
+    upd_des: "",
   },
   {
-    id: 'off_3',
-    timestamp: '15/06/2026 11:30:00',
-    kiosk: 'Toko Makmur Tani',
-    lot: 'ADV53878',
-    hybrid: 'ADV 112',
-    crops: 'Corn',
-    condition: 'tetap',
+    id: "off_3",
+    timestamp: "15/06/2026 11:30:00",
+    kiosk: "Toko Makmur Tani",
+    lot: "ADV53878",
+    hybrid: "ADV 112",
+    crops: "Corn",
+    condition: "tetap",
     stock: 1500,
-    user: 'Agus Herdianto',
+    user: "Agus Herdianto",
     lastQty: 1400,
     currentQty: 1500,
     pog: 1200,
@@ -7876,21 +11771,43 @@ const OFFLINE_WORKING_DATA = [
     sellOut: 1100,
     totalInv: 1500,
     idleStock: 400,
-    drDate: '2026-01-20',
-    expired: '2027-01-20',
-    jan: 150, feb: 160, mar: 180, apr: 140, mei: 160, jun: 170, jul: 180, ags: 0, sep: 0, okt: 0, nov: 0, des: 0,
-    upd_jan: '', upd_feb: '', upd_mar: '', upd_apr: 'sales', upd_mei: 'sales', upd_jun: 'sales', upd_jul: '', upd_ags: '', upd_sep: '', upd_okt: '', upd_nov: '', upd_des: ''
+    drDate: "2026-01-20",
+    expired: "2027-01-20",
+    jan: 150,
+    feb: 160,
+    mar: 180,
+    apr: 140,
+    mei: 160,
+    jun: 170,
+    jul: 180,
+    ags: 0,
+    sep: 0,
+    okt: 0,
+    nov: 0,
+    des: 0,
+    upd_jan: "",
+    upd_feb: "",
+    upd_mar: "",
+    upd_apr: "sales",
+    upd_mei: "sales",
+    upd_jun: "sales",
+    upd_jul: "",
+    upd_ags: "",
+    upd_sep: "",
+    upd_okt: "",
+    upd_nov: "",
+    upd_des: "",
   },
   {
-    id: 'off_4',
-    timestamp: '15/06/2026 11:45:00',
-    kiosk: 'Kios Tani Harapan',
-    lot: 'ADV99881',
-    hybrid: 'ADV 112',
-    crops: 'Corn',
-    condition: 'tetap',
+    id: "off_4",
+    timestamp: "15/06/2026 11:45:00",
+    kiosk: "Kios Tani Harapan",
+    lot: "ADV99881",
+    hybrid: "ADV 112",
+    crops: "Corn",
+    condition: "tetap",
     stock: 600,
-    user: 'Agus Herdianto',
+    user: "Agus Herdianto",
     lastQty: 500,
     currentQty: 600,
     pog: 450,
@@ -7898,31 +11815,73 @@ const OFFLINE_WORKING_DATA = [
     sellOut: 400,
     totalInv: 600,
     idleStock: 200,
-    drDate: '2026-03-10',
-    expired: '2027-03-10',
-    jan: 50, feb: 60, mar: 70, apr: 55, mei: 65, jun: 70, jul: 75, ags: 0, sep: 0, okt: 0, nov: 0, des: 0,
-    upd_jan: '', upd_feb: '', upd_mar: '', upd_apr: 'sales', upd_mei: 'sales', upd_jun: 'sales', upd_jul: '', upd_ags: '', upd_sep: '', upd_okt: '', upd_nov: '', upd_des: ''
-  }
+    drDate: "2026-03-10",
+    expired: "2027-03-10",
+    jan: 50,
+    feb: 60,
+    mar: 70,
+    apr: 55,
+    mei: 65,
+    jun: 70,
+    jul: 75,
+    ags: 0,
+    sep: 0,
+    okt: 0,
+    nov: 0,
+    des: 0,
+    upd_jan: "",
+    upd_feb: "",
+    upd_mar: "",
+    upd_apr: "sales",
+    upd_mei: "sales",
+    upd_jun: "sales",
+    upd_jul: "",
+    upd_ags: "",
+    upd_sep: "",
+    upd_okt: "",
+    upd_nov: "",
+    upd_des: "",
+  },
 ];
 
 const OFFLINE_DR_SALES = [
-  { lot: 'ADV53878', drDate: '2026-01-20', expired: '2027-01-20' },
-  { lot: 'ADV11099', drDate: '2026-02-15', expired: '2027-02-15' },
-  { lot: 'ADV99881', drDate: '2026-03-10', expired: '2027-03-10' }
+  { lot: "ADV53878", drDate: "2026-01-20", expired: "2027-01-20" },
+  { lot: "ADV11099", drDate: "2026-02-15", expired: "2027-02-15" },
+  { lot: "ADV99881", drDate: "2026-03-10", expired: "2027-03-10" },
 ];
 
-const INDO_MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+const INDO_MONTHS = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
 
 const CustomXAxisTick = (props: any) => {
   const { x, y, payload } = props;
-  const value = payload.value || '';
-  const words = typeof value === 'string' ? value.split(' ') : [String(value)];
+  const value = payload.value || "";
+  const words = typeof value === "string" ? value.split(" ") : [String(value)];
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={0} y={0} textAnchor="middle" fill="#4e5572" style={{ fontSize: '8.5px', fontWeight: 700, fontFamily: 'sans-serif' }}>
+      <text
+        x={0}
+        y={0}
+        textAnchor="middle"
+        fill="#4e5572"
+        style={{ fontSize: "8.5px", fontWeight: 700, fontFamily: "sans-serif" }}
+      >
         {words.map((word: string, index: number) => {
           if (index > 2) return null; // limit to 3 lines max
-          const displayWord = index === 2 && words.length > 3 ? word + '...' : word;
+          const displayWord =
+            index === 2 && words.length > 3 ? word + "..." : word;
           return (
             <tspan x={0} dy={index === 0 ? 8 : 10} key={index}>
               {displayWord}
@@ -7936,26 +11895,41 @@ const CustomXAxisTick = (props: any) => {
 
 export default function App() {
   const [userData, setUserData] = useState(null);
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState("home");
   const [isMenuVisible, setIsMenuVisible] = useState(true);
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(true);
 
   // Filter states for Executive Overview Tab
-  const [overviewMetricFilter, setOverviewMetricFilter] = useState<'POG' | 'Opening' | 'sales' | 'material' | 'movement' | 'idle' | 'total_stock'>('movement');
+  const [overviewMetricFilter, setOverviewMetricFilter] = useState<
+    | "POG"
+    | "Opening"
+    | "sales"
+    | "material"
+    | "movement"
+    | "idle"
+    | "total_stock"
+  >("movement");
 
   // Filter states for the lower part ("yang dibawah")
-  const [filterBelowMonth, setFilterBelowMonth] = useState<string>('All');
-  const [filterBelowChannel, setFilterBelowChannel] = useState<string>('All');
-  const [filterBelowMaterial, setFilterBelowMaterial] = useState<string>('All');
-  const [filterBelowTeam, setFilterBelowTeam] = useState<string>('All');
-  const [filterBelowArea, setFilterBelowArea] = useState<string>('All');
-  const [filterBelowCrop, setFilterBelowCrop] = useState<string>('All');
+  const [filterBelowMonth, setFilterBelowMonth] = useState<string>("All");
+  const [filterBelowChannel, setFilterBelowChannel] = useState<string>("All");
+  const [filterBelowMaterial, setFilterBelowMaterial] = useState<string>("All");
+  const [filterBelowTeam, setFilterBelowTeam] = useState<string>("All");
+  const [filterBelowArea, setFilterBelowArea] = useState<string>("All");
+  const [filterBelowCrop, setFilterBelowCrop] = useState<string>("All");
 
-  const isAditya = userData && (cleanForMatch(userData.name) === 'adityawiratama' || cleanForMatch(userData.name) === 'aditya');
+  const isAditya =
+    userData &&
+    (cleanForMatch(userData.name) === "adityawiratama" ||
+      cleanForMatch(userData.name) === "aditya");
 
   const userLevel = useMemo(() => {
     if (!userData) return 0;
-    if (userData.level !== undefined && userData.level !== null && String(userData.level).trim() !== '') {
+    if (
+      userData.level !== undefined &&
+      userData.level !== null &&
+      String(userData.level).trim() !== ""
+    ) {
       const parsed = parseLevelStr(userData.level);
       if (!isNaN(parsed)) return parsed;
     }
@@ -7974,74 +11948,89 @@ export default function App() {
   // Safety check to redirect from 'temp' or 'overview' tabs if unauthorized or disabled
   useEffect(() => {
     if (userData) {
-      if ((!showTempTab && activeTab === 'temp') || (!showOverviewTab && activeTab === 'overview')) {
-        setActiveTab('home');
+      if (
+        (!showTempTab && activeTab === "temp") ||
+        (!showOverviewTab && activeTab === "overview")
+      ) {
+        setActiveTab("home");
       }
     }
   }, [userData, activeTab, showTempTab, showOverviewTab]);
 
   // Load Google Material Symbols for icons
   useEffect(() => {
-    const link = document.createElement('link');
-    link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0';
-    link.rel = 'stylesheet';
+    const link = document.createElement("link");
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0";
+    link.rel = "stylesheet";
     document.head.appendChild(link);
   }, []);
 
   const handleLogin = async (name, password) => {
     // Attempt to real login using Apps Script endpoint
     try {
-      const resp = await fetch(`${SCRIPT_URL}?action=getUserProfile&user=${encodeURIComponent(name)}`);
+      const resp = await fetch(
+        `${SCRIPT_URL}?action=getUserProfile&user=${encodeURIComponent(name)}`,
+      );
       const res = await resp.json();
-      
-      if (res.status === 'success' && res.data) {
-         const data = { ...res.data };
-         const dbPassword = String(data.password || '').trim();
-         const inputPassword = String(password || '').trim();
-         
-         if (password !== 'bypass_password' && inputPassword !== dbPassword) {
-            return { success: false, error: 'Password salah.' };
-         }
-         
-         const isAditya = cleanForMatch(name) === 'adityawiratama' || cleanForMatch(name) === 'aditya';
-         if (isAditya) {
-           data.position = "Business Analyst";
-         } else {
-           data.position = normalizePosition(data.position);
-         }
-         setUserData(data);
-         return { success: true };
+
+      if (res.status === "success" && res.data) {
+        const data = { ...res.data };
+        const dbPassword = String(data.password || "").trim();
+        const inputPassword = String(password || "").trim();
+
+        if (password !== "bypass_password" && inputPassword !== dbPassword) {
+          return { success: false, error: "Password salah." };
+        }
+
+        const isAditya =
+          cleanForMatch(name) === "adityawiratama" ||
+          cleanForMatch(name) === "aditya";
+        if (isAditya) {
+          data.position = "Business Analyst";
+        } else {
+          data.position = normalizePosition(data.position);
+        }
+        setUserData(data);
+        return { success: true };
       } else {
-         const cleanName = cleanForMatch(name);
-         const matchedLocal = OFFLINE_EMPLOYEES.find(u => 
-           cleanForMatch(u.name) === cleanName || 
-           (cleanName === 'aditya' && cleanForMatch(u.name) === 'adityawiratama')
-         );
-         if (matchedLocal) {
-           setUserData({ ...matchedLocal });
-           return { success: true };
-         }
-         return { success: false, error: res.message || 'Username tidak ditemukan.' };
+        const cleanName = cleanForMatch(name);
+        const matchedLocal = OFFLINE_EMPLOYEES.find(
+          (u) =>
+            cleanForMatch(u.name) === cleanName ||
+            (cleanName === "aditya" &&
+              cleanForMatch(u.name) === "adityawiratama"),
+        );
+        if (matchedLocal) {
+          setUserData({ ...matchedLocal });
+          return { success: true };
+        }
+        return {
+          success: false,
+          error: res.message || "Username tidak ditemukan.",
+        };
       }
     } catch (e) {
-       console.warn("Login call error:", e);
-       const cleanName = cleanForMatch(name);
-       const matchedLocal = OFFLINE_EMPLOYEES.find(u => 
-         cleanForMatch(u.name) === cleanName || 
-         (cleanName === 'aditya' && cleanForMatch(u.name) === 'adityawiratama')
-       );
-       if (matchedLocal) {
-         setUserData({ ...matchedLocal });
-         return { success: true };
-       }
-       return { success: false, error: 'Terjadi kesalahan jaringan.' };
+      console.warn("Login call error:", e);
+      const cleanName = cleanForMatch(name);
+      const matchedLocal = OFFLINE_EMPLOYEES.find(
+        (u) =>
+          cleanForMatch(u.name) === cleanName ||
+          (cleanName === "aditya" &&
+            cleanForMatch(u.name) === "adityawiratama"),
+      );
+      if (matchedLocal) {
+        setUserData({ ...matchedLocal });
+        return { success: true };
+      }
+      return { success: false, error: "Terjadi kesalahan jaringan." };
     }
   };
 
   useEffect(() => {
     const runAutoLogin = async () => {
       try {
-        await handleLogin('Aditya Wiratama', 'bypass_password');
+        await handleLogin("Aditya Wiratama", "bypass_password");
       } catch (err) {
         console.warn("Auto login error:", err);
       } finally {
@@ -8055,15 +12044,21 @@ export default function App() {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] gap-6 bg-gradient-to-br from-[#F2E7FE] via-[#fbf8ff] to-[#edecff] text-[#181a2c]">
         <div className="relative">
-           <div className="size-20 border-4 border-[#edecff] rounded-full"></div>
-           <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
-           <div className="absolute inset-0 flex items-center justify-center">
-             <span className="material-symbols-outlined text-[32px] text-primary animate-pulse">sync</span>
-           </div>
+          <div className="size-20 border-4 border-[#edecff] rounded-full"></div>
+          <div className="size-20 border-4 border-primary border-t-transparent rounded-full animate-spin absolute inset-0"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="material-symbols-outlined text-[32px] text-primary animate-pulse">
+              sync
+            </span>
+          </div>
         </div>
         <div className="text-center animate-pulse">
-            <h3 className="text-[#181a2c] font-bold text-sm mb-1">Membuka Workspace...</h3>
-            <p className="text-[#8E94B7] text-[9px] font-semibold uppercase tracking-widest">Bypass login menuju Akun Aditya Wiratama</p>
+          <h3 className="text-[#181a2c] font-bold text-sm mb-1">
+            Membuka Workspace...
+          </h3>
+          <p className="text-[#8E94B7] text-[9px] font-semibold uppercase tracking-widest">
+            Bypass login menuju Akun Aditya Wiratama
+          </p>
         </div>
       </div>
     );
@@ -8074,29 +12069,36 @@ export default function App() {
   }
 
   return (
-    <div className={`min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-[#fbf8ff] font-sans selection:bg-[#edecff] text-[#181a2c] flex flex-col md:flex-row w-full mx-auto relative transition-all duration-300`}>
-      
+    <div
+      className={`min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] bg-[#fbf8ff] font-sans selection:bg-[#edecff] text-[#181a2c] flex flex-col md:flex-row w-full mx-auto relative transition-all duration-300`}
+    >
       {/* Desktop Sidebar (Visible on md and larger) */}
       <div className="hidden md:flex flex-col w-20 lg:w-64 bg-gradient-to-b from-[#154be2]/[0.09] via-[#154be2]/[0.04] to-white/70 backdrop-blur-xl border-r border-[#154be2]/12 h-screen sticky top-0 z-50 transition-all duration-300 left-0">
         <div className="flex items-center justify-center lg:justify-start gap-4 h-24 px-0 lg:px-8 border-b border-[#154be2]/10">
-           <div className="size-11 shrink-0 bg-gradient-to-br from-[#154be2] to-cyan-400 rounded-xl flex items-center justify-center shadow-[0_4px_16px_rgba(21,75,226,0.25)]">
-               <AdvantaLogo className="size-6 text-white" />
-           </div>
-           <span className="font-bold text-lg hidden lg:block tracking-tight text-[#154be2]">RADAR ADVANTA</span>
+          <div className="size-11 shrink-0 bg-gradient-to-br from-[#154be2] to-cyan-400 rounded-xl flex items-center justify-center shadow-[0_4px_16px_rgba(21,75,226,0.25)]">
+            <AdvantaLogo className="size-6 text-white" />
+          </div>
+          <span className="font-bold text-lg hidden lg:block tracking-tight text-[#154be2]">
+            RADAR ADVANTA
+          </span>
         </div>
 
         <div className="flex flex-col gap-2.5 mt-6 px-2.5 lg:px-4 flex-1">
           {/* Primary CTA: Input Activity - Keluar dari Group */}
-          <button 
-            onClick={() => setActiveTab('home')}
+          <button
+            onClick={() => setActiveTab("home")}
             className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all duration-200 cursor-pointer ${
-              activeTab === 'home' 
-                ? 'bg-gradient-to-r from-[#154be2] to-cyan-500 text-white font-extrabold shadow-[0_6px_20px_rgba(21,75,226,0.3)] ring-1 ring-[#154be2]/20 scale-[1.02]' 
-                : 'bg-gradient-to-r from-[#154be2]/10 to-cyan-400/10 hover:from-[#154be2]/15 hover:to-cyan-400/15 text-[#154be2] border border-[#154be2]/20 font-bold'
+              activeTab === "home"
+                ? "bg-gradient-to-r from-[#154be2] to-cyan-500 text-white font-extrabold shadow-[0_6px_20px_rgba(21,75,226,0.3)] ring-1 ring-[#154be2]/20 scale-[1.02]"
+                : "bg-gradient-to-r from-[#154be2]/10 to-cyan-400/10 hover:from-[#154be2]/15 hover:to-cyan-400/15 text-[#154be2] border border-[#154be2]/20 font-bold"
             }`}
           >
-            <span className="material-symbols-outlined ml-0 lg:ml-4">edit_note</span>
-            <span className="font-extrabold text-xs hidden lg:block">Input Activity</span>
+            <span className="material-symbols-outlined ml-0 lg:ml-4">
+              edit_note
+            </span>
+            <span className="font-extrabold text-xs hidden lg:block">
+              Input Activity
+            </span>
           </button>
 
           {/* Divider */}
@@ -8104,68 +12106,102 @@ export default function App() {
 
           {/* Main Navigation Group */}
           {showOverviewTab && (
-            <button 
-              onClick={() => setActiveTab('overview')}
-              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === 'overview' ? 'bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold' : 'text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]'}`}
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "overview" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
             >
-              <span className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === 'overview' ? 'font-normal' : ''}`}>analytics</span>
-              <span className="font-semibold text-xs hidden lg:block">Executive Overview</span>
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "overview" ? "font-normal" : ""}`}
+              >
+                analytics
+              </span>
+              <span className="font-semibold text-xs hidden lg:block">
+                Executive Overview
+              </span>
             </button>
           )}
-          
-          <button 
-            onClick={() => setActiveTab('partner')}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === 'partner' ? 'bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold' : 'text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]'}`}
+
+          <button
+            onClick={() => setActiveTab("partner")}
+            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "partner" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
           >
-            <span className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === 'partner' ? 'font-normal' : ''}`}>handshake</span>
-            <span className="font-semibold text-xs hidden lg:block">Data Partner</span>
+            <span
+              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "partner" ? "font-normal" : ""}`}
+            >
+              handshake
+            </span>
+            <span className="font-semibold text-xs hidden lg:block">
+              Data Partner
+            </span>
           </button>
 
-          <button 
-            onClick={() => setActiveTab('summary')}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === 'summary' ? 'bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold' : 'text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]'}`}
+          <button
+            onClick={() => setActiveTab("summary")}
+            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "summary" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
           >
-            <span className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === 'summary' ? 'font-normal' : ''}`}>donut_large</span>
-            <span className="font-semibold text-xs hidden lg:block">Stock Summary</span>
+            <span
+              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "summary" ? "font-normal" : ""}`}
+            >
+              donut_large
+            </span>
+            <span className="font-semibold text-xs hidden lg:block">
+              Stock Summary
+            </span>
           </button>
 
-          <button 
-            onClick={() => setActiveTab('pog')}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === 'pog' ? 'bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold' : 'text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]'}`}
+          <button
+            onClick={() => setActiveTab("pog")}
+            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "pog" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
           >
-            <span className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === 'pog' ? 'font-normal' : ''}`}>trending_up</span>
-            <span className="font-semibold text-xs hidden lg:block">POG Tracking</span>
+            <span
+              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "pog" ? "font-normal" : ""}`}
+            >
+              trending_up
+            </span>
+            <span className="font-semibold text-xs hidden lg:block">
+              POG Tracking
+            </span>
           </button>
 
           {showTempTab && (
-            <button 
-              onClick={() => setActiveTab('temp')}
-              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === 'temp' ? 'bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold' : 'text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]'}`}
+            <button
+              onClick={() => setActiveTab("temp")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "temp" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
             >
-              <span className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === 'temp' ? 'font-normal' : ''}`}>assignment</span>
-              <span className="font-semibold text-xs hidden lg:block">Review (Temp)</span>
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "temp" ? "font-normal" : ""}`}
+              >
+                assignment
+              </span>
+              <span className="font-semibold text-xs hidden lg:block">
+                Review (Temp)
+              </span>
             </button>
           )}
         </div>
 
         <div className="p-3 lg:p-4 pb-6 border-t border-[#154be2]/10">
-           <button 
-              onClick={() => setUserData(null)}
-              className="flex items-center justify-center lg:justify-start gap-3 h-12 w-full rounded-xl transition-all text-[#8E94B7] hover:bg-red-50 hover:text-red-600"
-            >
-              <span className="material-symbols-outlined ml-0 lg:ml-4">logout</span>
-              <span className="font-semibold text-xs hidden lg:block">Keluar System</span>
-           </button>
+          <button
+            onClick={() => setUserData(null)}
+            className="flex items-center justify-center lg:justify-start gap-3 h-12 w-full rounded-xl transition-all text-[#8E94B7] hover:bg-red-50 hover:text-red-600"
+          >
+            <span className="material-symbols-outlined ml-0 lg:ml-4">
+              logout
+            </span>
+            <span className="font-semibold text-xs hidden lg:block">
+              Keluar System
+            </span>
+          </button>
         </div>
       </div>
 
       <div className="flex-1 w-full min-w-0 max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto shadow-2xl md:shadow-none bg-[#fbf8ff] relative overflow-hidden pb-24 md:pb-8">
-        <Dashboard 
-          userData={userData} 
-          activeTab={activeTab} 
-          onLogout={() => setUserData(null)} 
-          onUserSwitch={handleLogin} 
-          setUserData={setUserData} 
+        <Dashboard
+          userData={userData}
+          activeTab={activeTab}
+          onLogout={() => setUserData(null)}
+          onUserSwitch={handleLogin}
+          setUserData={setUserData}
           setActiveTab={setActiveTab}
           overviewMetricFilter={overviewMetricFilter}
           setOverviewMetricFilter={setOverviewMetricFilter}
@@ -8183,109 +12219,144 @@ export default function App() {
           setFilterBelowCrop={setFilterBelowCrop}
         />
       </div>
-      
+
       {/* Bottom Navigation (Mobile Only) */}
-      <div className={`md:hidden fixed bottom-3 left-4 right-4 max-w-sm mx-auto flex items-end justify-between gap-3 z-50 transition-all duration-300 ${isMenuVisible ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-95 opacity-0 pointer-events-none'}`}>
-        
+      <div
+        className={`md:hidden fixed bottom-3 left-4 right-4 max-w-sm mx-auto flex items-end justify-between gap-3 z-50 transition-all duration-300 ${isMenuVisible ? "scale-100 opacity-100 pointer-events-auto" : "scale-95 opacity-0 pointer-events-none"}`}
+      >
         {/* Main Tab Group */}
         <div className="flex-1 flex flex-col bg-gradient-to-b from-[#154be2]/[0.12] via-white/80 to-white/95 backdrop-blur-xl py-1 shadow-[0_12px_36px_rgba(21,75,226,0.12)] rounded-[24px] border border-white/60 relative">
-          
           {/* Hide Button Pill */}
-          <button 
+          <button
             onClick={() => setIsMenuVisible(false)}
             className="absolute -top-3 right-6 bg-white/90 backdrop-blur-sm text-[#8E94B7] hover:text-[#181a2c] size-6 rounded-full border border-blue-100/55 shadow-sm transition-all hover:scale-105 active:scale-95 flex items-center justify-center z-50 cursor-pointer"
             title="Sembunyikan Menu"
           >
-            <span className="material-symbols-outlined text-xs font-bold">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-xs font-bold">
+              keyboard_arrow_down
+            </span>
           </button>
 
           <div className="flex flex-row items-center justify-around h-13 px-2">
             {showOverviewTab && (
-              <button 
-                onClick={() => setActiveTab('overview')}
+              <button
+                onClick={() => setActiveTab("overview")}
                 className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                  activeTab === 'overview' 
-                    ? 'bg-[#154be2]/12 text-[#154be2] font-extrabold' 
-                    : 'text-[#8E94B7] hover:text-[#181a2c]'
+                  activeTab === "overview"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
                 }`}
               >
-                <span className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === 'overview' ? 'font-semibold' : ''}`}>analytics</span>
-                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">Overview</span>
+                <span
+                  className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "overview" ? "font-semibold" : ""}`}
+                >
+                  analytics
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  Overview
+                </span>
               </button>
             )}
 
-            <button 
-              onClick={() => setActiveTab('partner')}
+            <button
+              onClick={() => setActiveTab("partner")}
               className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === 'partner' 
-                  ? 'bg-[#154be2]/12 text-[#154be2] font-extrabold' 
-                  : 'text-[#8E94B7] hover:text-[#181a2c]'
+                activeTab === "partner"
+                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                  : "text-[#8E94B7] hover:text-[#181a2c]"
               }`}
             >
-              <span className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === 'partner' ? 'font-semibold' : ''}`}>handshake</span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">Partner</span>
+              <span
+                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "partner" ? "font-semibold" : ""}`}
+              >
+                handshake
+              </span>
+              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                Partner
+              </span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('summary')}
+            <button
+              onClick={() => setActiveTab("summary")}
               className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === 'summary' 
-                  ? 'bg-[#154be2]/12 text-[#154be2] font-extrabold' 
-                  : 'text-[#8E94B7] hover:text-[#181a2c]'
+                activeTab === "summary"
+                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                  : "text-[#8E94B7] hover:text-[#181a2c]"
               }`}
             >
-              <span className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === 'summary' ? 'font-semibold' : ''}`}>donut_large</span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">Stock</span>
+              <span
+                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "summary" ? "font-semibold" : ""}`}
+              >
+                donut_large
+              </span>
+              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                Stock
+              </span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('pog')}
+            <button
+              onClick={() => setActiveTab("pog")}
               className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === 'pog' 
-                  ? 'bg-[#154be2]/12 text-[#154be2] font-extrabold' 
-                  : 'text-[#8E94B7] hover:text-[#181a2c]'
+                activeTab === "pog"
+                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                  : "text-[#8E94B7] hover:text-[#181a2c]"
               }`}
             >
-              <span className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === 'pog' ? 'font-semibold' : ''}`}>trending_up</span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">POG</span>
+              <span
+                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "pog" ? "font-semibold" : ""}`}
+              >
+                trending_up
+              </span>
+              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                POG
+              </span>
             </button>
 
             {showTempTab && (
-              <button 
-                onClick={() => setActiveTab('temp')}
+              <button
+                onClick={() => setActiveTab("temp")}
                 className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                  activeTab === 'temp' 
-                    ? 'bg-[#154be2]/12 text-[#154be2] font-extrabold' 
-                    : 'text-[#8E94B7] hover:text-[#181a2c]'
+                  activeTab === "temp"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
                 }`}
               >
-                <span className={`material-symbols-outlined text-[19px] leading-tight ${activeTab === 'temp' ? 'font-semibold' : ''}`}>assignment</span>
-                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">Temp</span>
+                <span
+                  className={`material-symbols-outlined text-[19px] leading-tight ${activeTab === "temp" ? "font-semibold" : ""}`}
+                >
+                  assignment
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  Temp
+                </span>
               </button>
             )}
           </div>
         </div>
 
         {/* Separate Input Button - Floating Action Button Style */}
-        <button 
-          onClick={() => setActiveTab('home')}
+        <button
+          onClick={() => setActiveTab("home")}
           className={`flex items-center justify-center shrink-0 size-[56px] rounded-full transition-all duration-200 select-none shadow-[0_8px_20px_rgba(21,75,226,0.35)] active:scale-95 cursor-pointer text-white bg-gradient-to-tr from-[#154be2] to-cyan-500`}
         >
-          <span className="material-symbols-outlined text-[26px]">edit_note</span>
+          <span className="material-symbols-outlined text-[26px]">
+            edit_note
+          </span>
         </button>
       </div>
 
       {/* Show Menu Trigger */}
       {!isMenuVisible && (
-        <button 
+        <button
           onClick={() => setIsMenuVisible(true)}
           className="md:hidden fixed bottom-4 right-4 bg-gradient-to-r from-primary to-cyan-400 text-white size-9 rounded-full shadow-[0_6px_20px_rgba(21,75,226,0.25)] flex items-center justify-center hover:opacity-95 active:scale-[0.98] transition-all z-50 animate-in fade-in slide-in-from-bottom-4 duration-300 cursor-pointer"
           title="Tampilkan Menu"
         >
-          <span className="material-symbols-outlined text-base">keyboard_arrow_up</span>
+          <span className="material-symbols-outlined text-base">
+            keyboard_arrow_up
+          </span>
         </button>
       )}
     </div>
   );
 }
-
