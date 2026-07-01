@@ -1,0 +1,148 @@
+9:const cleanForMatch = (s: any) => String(s || '').trim().toLowerCase().replace(/\s+/g, '');
+11:const matchNames = (name1: any, name2: any) => {
+19:const checkCropMatch = (itemCrop: string, filterCrop: string): boolean => {
+32:const normalizePosition = (pos: string | undefined): string => {
+50:const getPositionRank = (pos: string | undefined): number => {
+62:const parseLevelStr = (val: string | number | undefined | null): number => {
+78:const getFromRecord = <T,>(record: Record<string, T>, key: string | undefined): T | undefined => {
+88:const getMemberLevel = (name: string, teamLevels: Record<string, number>, teamPositions: Record<string, string>, userData: any): number => {
+107:        const foundKey = Object.keys(userData.teamProfiles).find(k => cleanForMatch(k) === cleanName);
+125:const compareMembersByLevel = (a: string, b: string, teamLevels: Record<string, number>, teamPositions: Record<string, string>, userData: any): number => {
+167:const getSubordinatesTransitive = (managerName: string, kiosksList: any[], teamSubordinates: Record<string, string[]> = {}) => {
+208:const getDirectSubordinates = (manager: string, teamSubordinates: Record<string, string[]>): string[] => {
+209:    const getSubsFor = (name: string): string[] => {
+211:        const key = Object.keys(teamSubordinates).find(k => cleanForMatch(k) === cleanName);
+235:const formatNum = (num) => {
+255:const buildDepthMap = (rootName: string, teamProfiles: Record<string, any>): Record<string, number> => {
+261:    const foundProfileKey = Object.keys(teamProfiles).find(k => 
+303:                const currentProfile = Object.values(teamProfiles).find((prof: any) => cleanForMatch(prof.name) === current) as any;
+324:const getDdaOfUser = (picName: string, rootName: string | undefined, teamProfiles: Record<string, any> | undefined): string => {
+331:    const foundProfileKey = Object.keys(teamProfiles).find(k => 
+339:    const rootProfile = Object.values(teamProfiles).find((p: any) => cleanForMatch(p.name) === cleanRealRoot) as any;
+350:        const matched = Object.keys(teamProfiles).find(k => cleanForMatch(k) === cleanPic);
+361:        const profile = Object.values(teamProfiles).find((p: any) => cleanForMatch(p.name) === current) as any;
+368:            const matched = Object.keys(teamProfiles).find(k => cleanForMatch(k) === parentClean);
+379:const EditModal = ({ isOpen, onClose, item, onSave, isSaving }) => {
+407:const ConfirmModal = ({ isOpen, onClose, onConfirm, isProcessing }) => {
+424:const LogoutConfirmModal = ({ isOpen, onClose, onConfirm }) => {
+453:const playBeep = () => {
+471:const QrScanModal = ({ isOpen, onClose, onScanSuccess }) => {
+484:    const startCamera = async () => {
+514:    const timer = setTimeout(() => {
+601:const PartnerEditModal = ({ isOpen, onClose, item, onSave, isSaving, availablePics }) => {
+632:const PartnerDeleteModal = ({ isOpen, onClose, onConfirm, isProcessing, itemName }) => {
+649:const DetailItemSection = ({ items, onEdit, onDelete, onUploadActivity, isSyncing, hasChanges, title, subtitle, category }) => {
+650:  const getConditionBadge = (cond) => {
+735:const Dashboard = ({ userData, activeTab, onLogout }) => {
+751:  const isBusinessAnalyst = useMemo(() => {
+793:  const CLUSTER_CONFIG = useMemo(() => [
+803:  const ALL_CLUSTER_KEYS = useMemo(() => CLUSTER_CONFIG.map(c => c.key), [CLUSTER_CONFIG]);
+808:  const toggleRow = (name) => setExpandedRows(prev => ({ ...prev, [name]: !prev[name] }));
+809:  const togglePogRow = (name) => setPogExpandedRows(prev => ({ ...prev, [name]: !prev[name] }));
+810:  const toggleCluster = (clusterKey) => setSelectedClusters(prev => prev.includes(clusterKey) ? prev.filter(k => k !== clusterKey) : [...prev, clusterKey]);
+811:  const toggleSelectAll = () => {
+816:  const teamMembers = useMemo(() => {
+824:            const allNames = employees.map(e => e.name).filter(Boolean);
+838:            const matchingEmp = employees.find(e => cleanForMatch(e.name) === curr || (e.email && cleanForMatch(e.email) === curr));
+861:        const userMatchedEmp = employees.find(e => cleanForMatch(e.name) === myNameClean || (e.email && cleanForMatch(e.email) === myNameClean));
+873:        const foundProfileKey = Object.keys(userData.teamProfiles).find(k => 
+884:        const filtered = Object.keys(userData.teamProfiles).filter(name => {
+889:        const withoutMe = filtered.filter(n => cleanForMatch(n) !== cleanRealRoot && cleanForMatch(n) !== myNameClean);
+908:         const isTransitiveMatch = uplineClean !== '' && uniquePics.some(m => cleanForMatch(m) === uplineClean);
+941:  const normalizeName = useCallback((nameStr: string) => {
+950:    const found = teamMembers.find(t => cleanForMatch(t) === clean);
+1126:       const others = teamMembers.filter(m => cleanForMatch(m) !== cleanForMatch(userData.name));
+1144:  const greeting = useMemo(() => {
+1152:  const fetchWorkingData = async () => {
+1175:      const parseTimestamp = (ts) => {
+1228:    const fetchChannels = async () => {
+1244:            const myKiosksData = fetchedKiosks.filter(k => matchNames(k.pic, userData.name));
+1275:    const checkLot = async () => {
+1299:    const handleClickOutside = (event) => {
+1307:  const handleAddLocal = () => {
+1327:  const handleEditLocal = (id, newQty) => {
+1344:  const handleDeleteLocal = () => {
+1356:  const hasChanges = workingData.some(i => i.isNew || i.condition !== 'tetap') || deletedItems.length > 0;
+1358:  const handleUploadActivity = async () => {
+1360:      const currentKioskItems = workingData.filter(item => item.kiosk === selectedKiosk);
+1385:  const handleEditPartnerSave = async (id, newPic) => {
+1403:  const handleDeletePartnerConfirm = async () => {
+1421:   const teamStats = useMemo(() => {
+1450:      const memberChannels = kiosks.filter(k => {
+1478:  const getStatsForPic = (name: string) => {
+1480:    const stat = teamStats.find(s => cleanForMatch(s.name) === cleanName);
+1486:  const mappedChannelsByPic = useMemo(() => {
+1487:    const enrichedKiosks = kiosks.map(k => {
+1501:  const mappingCategories = useMemo(() => {
+1513:  const displayedPartnerChannels = useMemo(() => {
+1517:  const myKiosks = useMemo(() => {
+1525:  const filteredKiosks = useMemo(() => myKiosks.filter(k => String(k.name || '').toLowerCase().includes(searchTerm.toLowerCase())), [myKiosks, searchTerm]);
+1538:  const parseDateForPog = (timestamp) => {
+1553:  const pogDataProcessed = useMemo(() => {
+1581:      const getTeamMemberMatch = (name: string): string | undefined => {
+1589:      const resolveHierarchy = (kioskName: string) => {
+1666:  const aggregatedPogData = useMemo(() => {
+1667:      const filteredData = pogDataProcessed.filter(item => {
+1673:      const hasGroupInfo = employees.some(e => {
+1687:                      const emp = employees.find(e => cleanForMatch(e.name) === cleanM);
+1702:                      const emp = employees.find(e => cleanForMatch(e.name) === cleanM);
+1717:              const getTeamMemberMatch = (name: string): string | undefined => {
+1774:          const rootMembers = activePogMembers.filter(m => {
+1794:          const buildNode = (name: string): any => {
+1797:              const myItems = filteredData.filter(item => cleanForMatch(item.pic) === nameClean);
+1798:              const childrenNodes = directSubs.map(sub => buildNode(sub));
+1870:          const roots = rootMembers.map(root => buildNode(root));
+1906:              const matched = activePogMembers.find(m => cleanForMatch(m) === cleanForMatch(item.pic));
+1956:              const buildTeamPogNode = (mName: string): any => {
+1961:                  const childrenNodes = directSubs.map(sub => buildTeamPogNode(sub));
+2017:  const availableCrops = useMemo(() => {
+2018:    const crops = workingData.map(item => {
+2029:  const activeTeamMembers = useMemo(() => {
+2033:    const hasGroupInfo = employees.some(e => {
+2046:          const emp = employees.find(e => cleanForMatch(e.name) === cleanM);
+2063:          const emp = employees.find(e => cleanForMatch(e.name) === cleanM);
+2082:      const getTeamMemberMatch = (name: string): string | undefined => {
+2135:  const summaryData = useMemo(() => {
+2156:    const getTeamMemberMatch = (name: string): string | undefined => {
+2162:    const enrichedData = workingData.map(item => {
+2206:    const teamMembersCleanSet = new Set(activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean));
+2207:    const nonLeafTeamMembersClean = activeTeamMembers.map(m => cleanForMatch(m)).filter(Boolean);
+2210:    const teamData = enrichedData.filter(item => {
+2212:        const isTeamMember = teamMembersCleanSet.has(picClean) || nonLeafTeamMembersClean.some(m => picClean.includes(m));
+2224:        const rootMembers = activeTeamMembers.filter(m => {
+2244:        const buildNode = (name: string): any => {
+2247:            const myItems = teamData.filter(item => cleanForMatch(item.pic) === nameClean);
+2248:            const childrenNodes = directSubs.map(sub => buildNode(sub));
+2319:        const roots = rootMembers.map(root => buildNode(root));
+2356:            const matched = activeTeamMembers.find(m => cleanForMatch(m) === cleanForMatch(item.pic));
+2406:            const buildTeamNode = (mName: string): any => {
+2411:                const childrenNodes = directSubs.map(sub => buildTeamNode(sub));
+2463:  const filteredSummaryData = useMemo(() => {
+2467:        const filterNode = (node: any): any => {
+2468:            const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (node[c] || 0), 0);
+2473:                        const leafSelectedTotal = selectedClusters.reduce((sum, c) => sum + (child[c] || 0), 0);
+2494:    const filterSubordinateNode = (node: any): any => {
+2495:        const nodeSelectedTotal = selectedClusters.reduce((sum, c) => sum + (node[c] || 0), 0);
+2509:                const filteredChildren = row.children.map(child => filterSubordinateNode(child));
+2510:                const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
+2514:            const filteredChildren = row.children.map(child => {
+2515:                const childSelectedTotal = selectedClusters.reduce((sum, c) => sum + (child[c] || 0), 0);
+2523:            const parentSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
+2530:            const rowSelectedTotal = selectedClusters.reduce((sum, c) => sum + (row[c] || 0), 0);
+2537:  const totalSummary = useMemo(() => {
+2546:  const totalPog = useMemo(() => {
+2558:  const renderRecursiveSummaryRow = (row: any, depth = 0): React.ReactNode => {
+2617:            const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+2636:  const renderRecursiveSubordinate = (child: any, depth = 0): React.ReactNode => {
+2682:                        const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+2704:  const renderRecursivePogSubordinate = (child: any, depth = 0): React.ReactNode => {
+2802:  const renderRecursivePogRow = (row: any, depth = 0): React.ReactNode => {
+3149:                  const layer1Members = teamMembers.filter(member => {
+3169:                          const depth2Subs = teamMembers.filter(member => {
+3360:                    const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+3448:                          const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+3492:                                      const clusterConfig = CLUSTER_CONFIG.find(c => c.key === clusterKey);
+3776:const LoginScreen = ({ onLogin }) => {
+3782:  const handleLoginSubmit = async () => {
+3876:  const handleLogin = async (name, password) => {
+3908:  const handleDemo = () => {

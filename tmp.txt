@@ -1,0 +1,25 @@
+7:const getSubordinatesTransitive = (managerName: string, kiosksList: any[], teamSubordinates: Record<string, string[]> = {}) => {
+15:        // Add subordinates from kiosks hierarchy
+16:        kiosksList.forEach(k => {
+279:  const [kiosks, setKiosks] = useState([]);
+349:      kiosks.forEach(k => {
+374:  }, [kiosks, userData.name, userData.subordinates]);
+694:      const memberChannels = kiosks.filter(k => {
+720:  }, [kiosks, teamMembers, workingData]);
+734:        return kiosks.filter(k => {
+739:    return kiosks.filter(k => {
+743:  }, [kiosks, mappingPic, teamMembers]);
+763:    return kiosks.filter(k => {
+767:  }, [kiosks, userData.name]);
+796:      kiosks.forEach(k => {
+808:          const kInfo = kiosks.find(k => cleanForMatch(k.name) === cleanForMatch(kioskName)) || {};
+864:  }, [rawWorkingData, drSalesData, kiosks, userData.area]);
+903:                  const transitiveSubs = getSubordinatesTransitive(manager, kiosks, teamSubordinates);
+919:                              const trans = getSubordinatesTransitive(ds, kiosks, teamSubordinates);
+1006:  }, [pogDataProcessed, pogGroupBy, pogSubGroupBy, pogFilterCrop, teamMembers, kiosks, userData.name, teamSubordinates]);
+1016:    kiosks.forEach(k => {
+1026:        const kioskInfo = kiosks.find(k => cleanForMatch(k.name) === cleanForMatch(item.kiosk)) || {};
+1094:                const transitiveSubs = getSubordinatesTransitive(manager, kiosks, teamSubordinates);
+1107:                            const trans = getSubordinatesTransitive(ds, kiosks, teamSubordinates);
+1188:  }, [workingData, kiosks, teamMembers, summaryGroupBy, summarySubGroupBy, userData.area, summaryFilterCrop, userData.name, teamSubordinates]);
+1325:            category={kiosks.find(k => cleanForMatch(k.name) === cleanForMatch(selectedKiosk))?.category || 'Uncategorized'}
