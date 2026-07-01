@@ -3645,20 +3645,11 @@ const Dashboard = ({
           Number(row[prevMonthCol]) > 0
             ? Number(row[prevMonthCol])
             : Number(row.lastQty) || 0;
-        item.currentQty =
-          targetMonthCol &&
-          row[targetMonthCol] !== undefined &&
-          Number(row[targetMonthCol]) > 0
-            ? Number(row[targetMonthCol])
-            : Number(row.stock) !== undefined
-              ? Number(row.stock)
-              : Number(row.currentQty) || Number(row.stock) || 0;
 
-        const condClean = String(row.condition || "")
-          .trim()
-          .toLowerCase();
-        const isTetap = condClean === "tetap" || condClean === "";
-        item.idleStock = isTetap ? item.currentQty : 0;
+        // Calculate End of Inv mathematically (Opening + Stock In - POG)
+        item.currentQty = item.lastQty + item.sellIn - item.pogAccumulated;
+
+        item.idleStock = Math.max(0, item.lastQty - item.pogAccumulated);
       }
     });
 
@@ -3925,20 +3916,11 @@ const Dashboard = ({
           Number(row[prevMonthCol]) > 0
             ? Number(row[prevMonthCol])
             : Number(row.lastQty) || 0;
-        item.currentQty =
-          targetMonthCol &&
-          row[targetMonthCol] !== undefined &&
-          Number(row[targetMonthCol]) > 0
-            ? Number(row[targetMonthCol])
-            : Number(row.stock) !== undefined
-              ? Number(row.stock)
-              : Number(row.currentQty) || Number(row.stock) || 0;
 
-        const condClean = String(row.condition || "")
-          .trim()
-          .toLowerCase();
-        const isTetap = condClean === "tetap" || condClean === "";
-        item.idleStock = isTetap ? item.currentQty : 0;
+        // Calculate End of Inv mathematically (Opening + Stock In - POG)
+        item.currentQty = item.lastQty + item.sellIn - item.pogAccumulated;
+
+        item.idleStock = Math.max(0, item.lastQty - item.pogAccumulated);
       }
     });
 
@@ -11942,8 +11924,8 @@ export default function App() {
     return 0;
   }, [userData]);
 
-  const showOverviewTab = false; // Temporarily disabled: userData && userLevel >= 4;
-  const showTempTab = false; // Temporarily disabled: isAditya;
+  const showOverviewTab = !!userData && userLevel >= 4;
+  const showTempTab = isAditya;
 
   // Safety check to redirect from 'temp' or 'overview' tabs if unauthorized or disabled
   useEffect(() => {
