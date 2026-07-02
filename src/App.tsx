@@ -1439,6 +1439,8 @@ const Dashboard = ({
   onUserSwitch,
   setUserData,
   setActiveTab,
+  accessRules,
+  setAccessRules,
   overviewMetricFilter,
   setOverviewMetricFilter,
   filterBelowMonth,
@@ -1710,6 +1712,58 @@ const Dashboard = ({
   const [isSummaryFilterOpen, setIsSummaryFilterOpen] = useState(true);
   const [isOverviewFilterOpen, setIsOverviewFilterOpen] = useState(false);
   const enrichedSummaryDataRef = useRef<any[]>([]);
+
+  // Access Rules
+  const allPositionsList = useMemo(() => {
+    const positions = new Set<string>();
+    employees.forEach((e) => {
+      const pos = e.position || e.Position || e.POSITION;
+      if (pos) {
+        positions.add(String(pos).trim());
+      }
+    });
+    return Array.from(positions).sort();
+  }, [employees]);
+
+  const toggleAccessRule = (position: string, page: string) => {
+    setAccessRules((prev: Record<string, Record<string, boolean>>) => {
+      const currentRules = prev[position] || {
+        home: true,
+        partner: true,
+        stock: true,
+        pog: true,
+        overview: false,
+        temp: false,
+        access: false
+      };
+      return {
+        ...prev,
+        [position]: {
+          ...currentRules,
+          [page]: !currentRules[page]
+        }
+      };
+    });
+  };
+
+  const renderAccessCheckbox = (position: string, page: string) => {
+    const isChecked = accessRules[position]?.[page] ?? (page === 'overview' || page === 'temp' || page === 'access' ? false : true);
+    return (
+      <button 
+        onClick={() => toggleAccessRule(position, page)}
+        className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border uppercase tracking-wide transition-colors ${
+          isChecked 
+            ? "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" 
+            : "text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100"
+        }`}
+      >
+        <span className="material-symbols-outlined text-[12px]">
+          {isChecked ? "check_circle" : "cancel"}
+        </span> 
+        {isChecked ? "Yes" : "No"}
+      </button>
+    );
+  };
 
   // State Tab Temp (Temporary Review Page)
   const [tempSearchQuery, setTempSearchQuery] = useState("");
@@ -10537,6 +10591,78 @@ const Dashboard = ({
         </div>
       )}
 
+      {activeTab === "access" && (
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+          <div className="mb-6 ml-1 flex flex-col gap-1">
+            <h1 className="text-lg font-semibold text-[#181a2c] tracking-tight">
+              Access Control Menu
+            </h1>
+            <p className="text-[#8E94B7] text-[11px] font-semibold tracking-wide">
+              Level permissions and access rights mapping
+            </p>
+          </div>
+          
+          <div className="bg-white rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.03)] border border-[#154be2]/5 overflow-hidden">
+            <div className="p-6 border-b border-[#f1f5f9]">
+              <div className="flex items-center gap-2">
+                <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-primary text-[20px]">
+                    admin_panel_settings
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#181a2c]">System Access Rights</h3>
+                  <p className="text-[10px] font-semibold text-[#8E94B7] mt-0.5">Matrix of features available for each organizational level</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[700px]">
+                <thead>
+                  <tr className="bg-[#fbfaff]">
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Position</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Home Tab</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Data Partner</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Stock Summary</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">POG Tracking</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Overview Tab</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Temp Tab</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Access Menu</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1f5f9]">
+                  {allPositionsList.map((position) => (
+                    <tr key={position} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-5 py-4">
+                        <span className="text-[11px] font-semibold text-[#181a2c] bg-slate-100 px-2 py-1 rounded-md">{position}</span>
+                      </td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'home')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'partner')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'stock')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'pog')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'overview')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'temp')}</td>
+                      <td className="px-5 py-4">{renderAccessCheckbox(position, 'access')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            
+            <div className="p-5 border-t border-[#f1f5f9] bg-[#fbfaff]">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-[#8E94B7] text-[18px]">info</span>
+                <p className="text-[10px] font-semibold text-[#8E94B7] leading-relaxed">
+                  <span className="text-[#181a2c] font-bold uppercase tracking-wider block mb-1">General Access Rules</span>
+                  All levels have access to the <strong className="text-primary">Home</strong>, <strong className="text-primary">Data Partner</strong>, <strong className="text-primary">Stock Summary</strong>, and <strong className="text-primary">POG Tracking</strong> tabs. The data visible within these tabs is automatically filtered based on the user's <strong className="text-primary">Data Visibility</strong> level. The <strong className="text-primary">Access Menu</strong> tab is strictly limited to authorized system administrators.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === "temp" && (
         <div className="animate-in fade-in slide-in-from-right-4 duration-300 animate-in">
           {consolidationSuccessMsg && (
@@ -12108,20 +12234,58 @@ export default function App() {
     return 0;
   }, [userData]);
 
-  const showOverviewTab = !!userData && userLevel >= 4;
-  const showTempTab = isAditya;
+  const userPosition = useMemo(() => {
+    return userData ? String(userData.position || "").trim() : "";
+  }, [userData]);
 
-  // Safety check to redirect from 'temp' or 'overview' tabs if unauthorized or disabled
+  const [accessRules, setAccessRules] = useState<Record<string, Record<string, boolean>>>({
+    "National Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+    "Director": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+    "General Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+    "VP": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+  });
+
+  const userAccess = accessRules[userPosition] || {
+    home: true,
+    partner: true,
+    stock: true,
+    pog: true,
+    overview: userPosition === "National Head" || userPosition === "Director" || userPosition === "General Manager" || userPosition === "VP",
+    temp: false,
+    access: false
+  };
+
+  const showHomeTab = userData ? userAccess.home : false;
+  const showPartnerTab = userData ? userAccess.partner : false;
+  const showStockTab = userData ? userAccess.stock : false;
+  const showPogTab = userData ? userAccess.pog : false;
+  const showOverviewTab = userData ? userAccess.overview : false;
+  const showTempTab = isAditya || (userData ? userAccess.temp : false);
+  const showAccessTab = isAditya || (userData ? userAccess.access : false);
+
+  // Safety check to redirect from unauthorized or disabled tabs
   useEffect(() => {
     if (userData) {
       if (
+        (!showHomeTab && activeTab === "home") ||
+        (!showPartnerTab && activeTab === "data-partner") ||
+        (!showStockTab && activeTab === "stock-summary") ||
+        (!showPogTab && activeTab === "pog-tracking") ||
         (!showTempTab && activeTab === "temp") ||
-        (!showOverviewTab && activeTab === "overview")
+        (!showOverviewTab && activeTab === "overview") ||
+        (!showAccessTab && activeTab === "access")
       ) {
-        setActiveTab("home");
+        // Find first available tab
+        if (showHomeTab) setActiveTab("home");
+        else if (showPartnerTab) setActiveTab("data-partner");
+        else if (showStockTab) setActiveTab("stock-summary");
+        else if (showPogTab) setActiveTab("pog-tracking");
+        else if (showOverviewTab) setActiveTab("overview");
+        else if (showTempTab) setActiveTab("temp");
+        else if (showAccessTab) setActiveTab("access");
       }
     }
-  }, [userData, activeTab, showTempTab, showOverviewTab]);
+  }, [userData, activeTab, showHomeTab, showPartnerTab, showStockTab, showPogTab, showTempTab, showOverviewTab, showAccessTab]);
 
   // Load Google Material Symbols for icons
   useEffect(() => {
@@ -12258,27 +12422,45 @@ export default function App() {
 
         <div className="flex flex-col gap-2.5 mt-6 px-2.5 lg:px-4 flex-1">
           {/* Primary CTA: Input Activity - Keluar dari Group */}
-          <button
-            onClick={() => setActiveTab("home")}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all duration-200 cursor-pointer ${
-              activeTab === "home"
-                ? "bg-gradient-to-r from-[#154be2] to-cyan-500 text-white font-extrabold shadow-[0_6px_20px_rgba(21,75,226,0.3)] ring-1 ring-[#154be2]/20 scale-[1.02]"
-                : "bg-gradient-to-r from-[#154be2]/10 to-cyan-400/10 hover:from-[#154be2]/15 hover:to-cyan-400/15 text-[#154be2] border border-[#154be2]/20 font-bold"
-            }`}
-          >
-            <span className="material-symbols-outlined ml-0 lg:ml-4">
-              edit_note
-            </span>
-            <span className={`font-extrabold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
-              Input Activity
-            </span>
-          </button>
+          {showHomeTab ? (
+            <button
+              onClick={() => setActiveTab("home")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all duration-200 cursor-pointer ${
+                activeTab === "home"
+                  ? "bg-gradient-to-r from-[#154be2] to-cyan-500 text-white font-extrabold shadow-[0_6px_20px_rgba(21,75,226,0.3)] ring-1 ring-[#154be2]/20 scale-[1.02]"
+                  : "bg-gradient-to-r from-[#154be2]/10 to-cyan-400/10 hover:from-[#154be2]/15 hover:to-cyan-400/15 text-[#154be2] border border-[#154be2]/20 font-bold"
+              }`}
+            >
+              <span className="material-symbols-outlined ml-0 lg:ml-4">
+                edit_note
+              </span>
+              <span className={`font-extrabold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                Input Activity
+              </span>
+            </button>
+          ) : showOverviewTab ? (
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all duration-200 cursor-pointer ${
+                activeTab === "overview"
+                  ? "bg-gradient-to-r from-[#154be2] to-cyan-500 text-white font-extrabold shadow-[0_6px_20px_rgba(21,75,226,0.3)] ring-1 ring-[#154be2]/20 scale-[1.02]"
+                  : "bg-gradient-to-r from-[#154be2]/10 to-cyan-400/10 hover:from-[#154be2]/15 hover:to-cyan-400/15 text-[#154be2] border border-[#154be2]/20 font-bold"
+              }`}
+            >
+              <span className="material-symbols-outlined ml-0 lg:ml-4">
+                analytics
+              </span>
+              <span className={`font-extrabold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                Executive Overview
+              </span>
+            </button>
+          ) : null}
 
           {/* Divider */}
           <div className="h-[1px] bg-[#154be2]/10 my-1 lg:mx-2" />
 
           {/* Main Navigation Group */}
-          {showOverviewTab && (
+          {showOverviewTab && showHomeTab && (
             <button
               onClick={() => setActiveTab("overview")}
               className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "overview" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
@@ -12294,47 +12476,53 @@ export default function App() {
             </button>
           )}
 
-          <button
-            onClick={() => setActiveTab("partner")}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "partner" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
-          >
-            <span
-              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "partner" ? "font-normal" : ""}`}
+          {showPartnerTab && (
+            <button
+              onClick={() => setActiveTab("partner")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "partner" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
             >
-              handshake
-            </span>
-            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
-              Data Partner
-            </span>
-          </button>
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "partner" ? "font-normal" : ""}`}
+              >
+                handshake
+              </span>
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                Data Partner
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab("summary")}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "summary" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
-          >
-            <span
-              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "summary" ? "font-normal" : ""}`}
+          {showStockTab && (
+            <button
+              onClick={() => setActiveTab("summary")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "summary" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
             >
-              donut_large
-            </span>
-            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
-              Stock Summary
-            </span>
-          </button>
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "summary" ? "font-normal" : ""}`}
+              >
+                donut_large
+              </span>
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                Stock Summary
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setActiveTab("pog")}
-            className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "pog" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
-          >
-            <span
-              className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "pog" ? "font-normal" : ""}`}
+          {showPogTab && (
+            <button
+              onClick={() => setActiveTab("pog")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "pog" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
             >
-              trending_up
-            </span>
-            <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
-              POG Tracking
-            </span>
-          </button>
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "pog" ? "font-normal" : ""}`}
+              >
+                trending_up
+              </span>
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                POG Tracking
+              </span>
+            </button>
+          )}
 
           {showTempTab && (
             <button
@@ -12348,6 +12536,22 @@ export default function App() {
               </span>
               <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
                 Review (Temp)
+              </span>
+            </button>
+          )}
+
+          {showAccessTab && (
+            <button
+              onClick={() => setActiveTab("access")}
+              className={`flex items-center justify-center lg:justify-start gap-3 h-13 rounded-xl transition-all ${activeTab === "access" ? "bg-[#154be2]/15 text-[#154be2] shadow-[0_4px_12px_rgba(21,75,226,0.12)] ring-1 ring-[#154be2]/15 font-bold" : "text-[#8E94B7] hover:bg-white/40 hover:text-[#181a2c]"}`}
+            >
+              <span
+                className={`material-symbols-outlined ml-0 lg:ml-4 ${activeTab === "access" ? "font-normal" : ""}`}
+              >
+                admin_panel_settings
+              </span>
+              <span className={`font-semibold text-xs hidden ${isSidebarExpanded ? "lg:block" : ""}`}>
+                Access Menu
               </span>
             </button>
           )}
@@ -12376,6 +12580,8 @@ export default function App() {
           onUserSwitch={handleLogin}
           setUserData={setUserData}
           setActiveTab={setActiveTab}
+          accessRules={accessRules}
+          setAccessRules={setAccessRules}
           overviewMetricFilter={overviewMetricFilter}
           setOverviewMetricFilter={setOverviewMetricFilter}
           filterBelowMonth={filterBelowMonth}
@@ -12411,7 +12617,7 @@ export default function App() {
           </button>
 
           <div className="flex flex-row items-center justify-around h-13 px-2">
-            {showOverviewTab && (
+            {showOverviewTab && showHomeTab && (
               <button
                 onClick={() => setActiveTab("overview")}
                 className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
@@ -12431,59 +12637,65 @@ export default function App() {
               </button>
             )}
 
-            <button
-              onClick={() => setActiveTab("partner")}
-              className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === "partner"
-                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
-                  : "text-[#8E94B7] hover:text-[#181a2c]"
-              }`}
-            >
-              <span
-                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "partner" ? "font-semibold" : ""}`}
+            {showPartnerTab && (
+              <button
+                onClick={() => setActiveTab("partner")}
+                className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
+                  activeTab === "partner"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
+                }`}
               >
-                handshake
-              </span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
-                Partner
-              </span>
-            </button>
+                <span
+                  className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "partner" ? "font-semibold" : ""}`}
+                >
+                  handshake
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  Partner
+                </span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("summary")}
-              className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === "summary"
-                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
-                  : "text-[#8E94B7] hover:text-[#181a2c]"
-              }`}
-            >
-              <span
-                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "summary" ? "font-semibold" : ""}`}
+            {showStockTab && (
+              <button
+                onClick={() => setActiveTab("summary")}
+                className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
+                  activeTab === "summary"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
+                }`}
               >
-                donut_large
-              </span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
-                Stock
-              </span>
-            </button>
+                <span
+                  className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "summary" ? "font-semibold" : ""}`}
+                >
+                  donut_large
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  Stock
+                </span>
+              </button>
+            )}
 
-            <button
-              onClick={() => setActiveTab("pog")}
-              className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
-                activeTab === "pog"
-                  ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
-                  : "text-[#8E94B7] hover:text-[#181a2c]"
-              }`}
-            >
-              <span
-                className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "pog" ? "font-semibold" : ""}`}
+            {showPogTab && (
+              <button
+                onClick={() => setActiveTab("pog")}
+                className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
+                  activeTab === "pog"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
+                }`}
               >
-                trending_up
-              </span>
-              <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
-                POG
-              </span>
-            </button>
+                <span
+                  className={`material-symbols-outlined text-[18px] leading-tight ${activeTab === "pog" ? "font-semibold" : ""}`}
+                >
+                  trending_up
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  POG
+                </span>
+              </button>
+            )}
 
             {showTempTab && (
               <button
@@ -12504,18 +12716,49 @@ export default function App() {
                 </span>
               </button>
             )}
+
+            {showAccessTab && (
+              <button
+                onClick={() => setActiveTab("access")}
+                className={`flex flex-col items-center justify-center h-11 px-2.5 rounded-xl transition-all duration-200 select-none ${
+                  activeTab === "access"
+                    ? "bg-[#154be2]/12 text-[#154be2] font-extrabold"
+                    : "text-[#8E94B7] hover:text-[#181a2c]"
+                }`}
+              >
+                <span
+                  className={`material-symbols-outlined text-[19px] leading-tight ${activeTab === "access" ? "font-semibold" : ""}`}
+                >
+                  admin_panel_settings
+                </span>
+                <span className="text-[7.5px] font-bold uppercase tracking-wider leading-none mt-0.5">
+                  Access
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Separate Input Button - Floating Action Button Style */}
-        <button
-          onClick={() => setActiveTab("home")}
-          className={`flex items-center justify-center shrink-0 size-[56px] rounded-full transition-all duration-200 select-none shadow-[0_8px_20px_rgba(21,75,226,0.35)] active:scale-95 cursor-pointer text-white bg-gradient-to-tr from-[#154be2] to-cyan-500`}
-        >
-          <span className="material-symbols-outlined text-[26px]">
-            edit_note
-          </span>
-        </button>
+        {showHomeTab ? (
+          <button
+            onClick={() => setActiveTab("home")}
+            className={`flex items-center justify-center shrink-0 size-[56px] rounded-full transition-all duration-200 select-none shadow-[0_8px_20px_rgba(21,75,226,0.35)] active:scale-95 cursor-pointer text-white bg-gradient-to-tr from-[#154be2] to-cyan-500`}
+          >
+            <span className="material-symbols-outlined text-[26px]">
+              edit_note
+            </span>
+          </button>
+        ) : showOverviewTab ? (
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`flex items-center justify-center shrink-0 size-[56px] rounded-full transition-all duration-200 select-none shadow-[0_8px_20px_rgba(21,75,226,0.35)] active:scale-95 cursor-pointer text-white bg-gradient-to-tr from-[#154be2] to-cyan-500`}
+          >
+            <span className="material-symbols-outlined text-[26px]">
+              analytics
+            </span>
+          </button>
+        ) : null}
       </div>
 
       {/* Show Menu Trigger */}
