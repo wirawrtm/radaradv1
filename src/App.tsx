@@ -256,6 +256,55 @@ const formatNum = (num) => {
   });
 };
 
+const formatOverviewVal = (
+  num: number | undefined | null,
+  forceMt?: boolean
+): { valueStr: string; unit: string } => {
+  const n = num || 0;
+  if (n === 0) {
+    return { valueStr: "0", unit: forceMt ? "MT" : "Kg" };
+  }
+  const absVal = Math.abs(n);
+  const isMt = forceMt !== undefined ? forceMt : (absVal >= 1000);
+
+  if (isMt) {
+    const mtVal = n / 1000;
+    const absMtVal = Math.abs(mtVal);
+    let dec = 0;
+    if (absMtVal < 10) {
+      dec = 2;
+    } else if (absMtVal < 100) {
+      dec = 1;
+    } else {
+      dec = 0;
+    }
+    return {
+      valueStr: mtVal.toLocaleString("id-ID", {
+        minimumFractionDigits: dec,
+        maximumFractionDigits: dec,
+      }),
+      unit: "MT",
+    };
+  } else {
+    const dec = absVal < 10 ? 2 : 1;
+    return {
+      valueStr: n.toLocaleString("id-ID", {
+        minimumFractionDigits: dec,
+        maximumFractionDigits: dec,
+      }),
+      unit: "Kg",
+    };
+  }
+};
+
+const formatOverviewWithUnit = (
+  num: number | undefined | null,
+  forceMt?: boolean
+): string => {
+  const formatted = formatOverviewVal(num, forceMt);
+  return `${formatted.valueStr} ${formatted.unit}`;
+};
+
 const parseTaskDate = (timestamp: any) => {
   if (!timestamp) return null;
   let d;
@@ -1714,6 +1763,24 @@ const Dashboard = ({
   const enrichedSummaryDataRef = useRef<any[]>([]);
 
   // Access Rules
+  const [isSavingAccess, setIsSavingAccess] = useState(false);
+  const [accessSaveSuccess, setAccessSaveSuccess] = useState(false);
+
+  const handleSaveAccessRules = () => {
+    setIsSavingAccess(true);
+    try {
+      localStorage.setItem('appAccessRules', JSON.stringify(accessRules));
+    } catch (e) {
+      console.error('Failed to save access rules', e);
+    }
+    // Simulate API call to save settings
+    setTimeout(() => {
+      setIsSavingAccess(false);
+      setAccessSaveSuccess(true);
+      setTimeout(() => setAccessSaveSuccess(false), 3000);
+    }, 800);
+  };
+
   const allPositionsList = useMemo(() => {
     const positions = new Set<string>();
     employees.forEach((e) => {
@@ -6104,6 +6171,18 @@ const Dashboard = ({
     return totals;
   }, [summaryData, selectedClusters, ALL_CLUSTER_KEYS]);
 
+  const overviewUseMt = useMemo(() => {
+    const maxVal = Math.max(
+      overviewStats.totalOpeningStock || 0,
+      overviewStats.totalCurrentStock || 0,
+      overviewStats.totalSellIn || 0,
+      overviewStats.totalIdleStock || 0,
+      overviewStats.totalSellOut || 0,
+      totalSummary.selectedTotal || 0
+    );
+    return maxVal >= 1000;
+  }, [overviewStats, totalSummary]);
+
   const handleDownloadSummaryExcel = () => {
     const teamMembersCleanSet = new Set(
       activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
@@ -7446,20 +7525,20 @@ const Dashboard = ({
     if (filteredSummaryData.length === 0) return null;
     return (
       <div
-        className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-5 md:px-7 rounded-[36px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] transition-all duration-250 select-none text-white flex flex-col gap-6 lg:gap-8"
+        className="flex-1 w-full min-w-0 bg-gradient-to-br from-primary to-cyan-400 p-4 md:py-4 md:px-6 rounded-[24px] shadow-[0_12px_32px_rgba(21,75,226,0.35)] transition-all duration-250 select-none text-white flex flex-col gap-3 lg:gap-4"
       >
         {/* Left Side: Grand Total & Clusters */}
         <div className="flex flex-col w-full shrink-0 justify-center">
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-2">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-white/80">
                 tune
               </span>
               <div className="flex flex-col mr-2">
-                <span className="font-semibold text-sm uppercase tracking-wider text-white/90">
+                <span className="font-semibold text-xs uppercase tracking-wider text-white/90">
                   Grand Total
                 </span>
-                <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
+                <span className="text-[9px] font-bold text-white/70 uppercase tracking-widest mt-0.5">
                   {filterBelowCrop || "All"}
                 </span>
               </div>
@@ -7469,7 +7548,7 @@ const Dashboard = ({
                     e.stopPropagation();
                     setGrandTotalViewBy("hybrid");
                   }}
-                  className={`px-3.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors ${
                     grandTotalViewBy === "hybrid"
                       ? "bg-white text-primary shadow-sm"
                       : "text-white/70 hover:text-white"
@@ -7482,7 +7561,7 @@ const Dashboard = ({
                     e.stopPropagation();
                     setGrandTotalViewBy("area");
                   }}
-                  className={`px-3.5 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  className={`px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-colors ${
                     grandTotalViewBy === "area"
                       ? "bg-white text-primary shadow-sm"
                       : "text-white/70 hover:text-white"
@@ -7493,15 +7572,15 @@ const Dashboard = ({
               </div>
             </div>
             <div className="flex flex-col items-end">
-              <span className="font-bold text-2xl xl:text-3xl text-white tracking-tight">
-                {formatNum(totalSummary.selectedTotal)}
+              <span className="font-bold text-xl xl:text-2xl text-white tracking-tight">
+                {formatOverviewVal(totalSummary.selectedTotal, overviewUseMt).valueStr}
               </span>
               <span className="text-[8px] xl:text-[9px] text-white/80 uppercase tracking-widest font-bold">
-                Total Kg
+                Total {formatOverviewVal(totalSummary.selectedTotal, overviewUseMt).unit}
               </span>
             </div>
           </div>
-          <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-4 mt-2">
+          <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-2.5 mt-1">
             {ALL_CLUSTER_KEYS.map((clusterKey) => {
               if (
                 clusterKey === "Uncategorized" &&
@@ -7523,13 +7602,13 @@ const Dashboard = ({
                         : [...prev, clusterKey]
                     );
                   }}
-                  className={`flex-1 min-w-0 py-1.5 px-0.5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${isSelected ? "opacity-100 hover:bg-white/10 rounded-md" : "opacity-40 hover:opacity-60"}`}
+                  className={`flex-1 min-w-0 py-1 px-0.5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${isSelected ? "opacity-100 hover:bg-white/10 rounded-md" : "opacity-40 hover:opacity-60"}`}
                 >
-                  <span className="text-[9px] xl:text-[10px] font-bold uppercase tracking-wider text-white/85 mb-1 truncate w-full">
+                  <span className="text-[9px] xl:text-[10px] font-bold uppercase tracking-wider text-white/85 mb-0.5 truncate w-full">
                     {clusterConfig?.label || clusterKey}
                   </span>
-                  <span className="font-bold text-sm xl:text-base truncate w-full text-white">
-                    {formatNum(totalSummary[clusterKey])}
+                  <span className="font-bold text-xs xl:text-sm truncate w-full text-white">
+                    {formatOverviewWithUnit(totalSummary[clusterKey], overviewUseMt)}
                   </span>
                 </div>
               );
@@ -7538,29 +7617,27 @@ const Dashboard = ({
         </div>
 
         {/* Right Side: Total per Item & Aging */}
-        <div className="flex flex-col flex-1 border-t border-white/15 pt-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 w-full max-h-[300px] lg:max-h-none overflow-y-auto pr-1 custom-scrollbar">
-            {grandTotalStats.map((stat) => (
+        <div className="flex flex-col flex-1 border-t border-white/15 pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2.5 w-full max-h-[300px] lg:max-h-none overflow-y-auto pr-1 custom-scrollbar">
+            {grandTotalStats.map((stat, index) => (
               <div
                 key={stat.name}
-                className="bg-white/10 border border-white/20 p-3 rounded-[20px] flex flex-col shadow-sm"
+                className="bg-white/10 border border-white/20 py-2 px-3 rounded-[16px] flex flex-col shadow-sm"
               >
-                <div className="flex items-center gap-2.5 mb-2">
-                  <div className="size-7 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
-                    <span className="material-symbols-outlined text-[14px]">
-                      {grandTotalViewBy === "area" ? "map" : "eco"}
-                    </span>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="size-6 rounded-lg bg-white/20 flex items-center justify-center text-white font-black text-[11px] shrink-0">
+                    {index + 1}
                   </div>
                   <div className="min-w-0 flex-1 flex justify-between items-center">
-                    <p className="text-[12px] font-bold text-white uppercase tracking-wider truncate leading-tight">
+                    <p className="text-[11px] font-bold text-white uppercase tracking-wider truncate leading-none">
                       {stat.name}
                     </p>
-                    <p className="text-[13px] font-extrabold text-white tracking-tight leading-none">
-                      {formatNum(stat.total)}
+                    <p className="text-[12px] font-extrabold text-white tracking-tight leading-none">
+                      {formatOverviewWithUnit(stat.total, overviewUseMt)}
                     </p>
                   </div>
                 </div>
-                <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-2 mt-2">
+                <div className="flex w-full divide-x divide-white/15 border-t border-white/15 pt-1.5 mt-1.5">
                   {selectedClusters.map((clusterKey) => {
                     const val = stat.clusters[clusterKey] || 0;
                     if (clusterKey === "Uncategorized" && val === 0)
@@ -7577,7 +7654,7 @@ const Dashboard = ({
                           {clusterConfig?.label || clusterKey}
                         </span>
                         <span className="font-bold text-[8.5px] truncate w-full text-white">
-                          {formatNum(val)}
+                          {formatOverviewVal(val, overviewUseMt).valueStr}
                         </span>
                       </div>
                     );
@@ -7948,124 +8025,109 @@ const Dashboard = ({
           </div>
 
           {/* KPI Cards Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 mb-3.5">
             {/* KPI 1: Opening Inv */}
-            <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
+            <div className="bg-white p-4 rounded-[22px] shadow-[0_8px_24px_rgba(21,75,226,0.12)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.22)] border border-[#154be2]/15 flex flex-col justify-between relative overflow-hidden group transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-[36px] text-amber-500">
                   inventory_2
                 </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+              <p className="text-[10px] md:text-[11px] font-extrabold text-[#5c648e] uppercase tracking-wider leading-none mb-1">
                 OPENING INV
               </p>
               <div className="mt-2 font-sans font-bold text-amber-600">
-                <span className="text-xl md:text-2xl">
-                  {overviewStats.totalOpeningStock.toLocaleString()}
+                <span className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  {formatOverviewVal(overviewStats.totalOpeningStock, overviewUseMt).valueStr}
                 </span>
-                <span className="text-[9px] text-amber-500 font-semibold ml-1">
-                  Kg
+                <span className="text-[10px] text-amber-500 font-bold ml-1">
+                  {formatOverviewVal(overviewStats.totalOpeningStock, overviewUseMt).unit}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
-                Inventori awal bulan saat ini
-              </p>
             </div>
 
             {/* KPI 2: Ending Inv */}
-            <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
+            <div className="bg-white p-4 rounded-[22px] shadow-[0_8px_24px_rgba(21,75,226,0.12)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.22)] border border-[#154be2]/15 flex flex-col justify-between relative overflow-hidden group transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-[36px] text-purple-500">
                   warehouse
                 </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+              <p className="text-[10px] md:text-[11px] font-extrabold text-[#5c648e] uppercase tracking-wider leading-none mb-1">
                 ENDING INV
               </p>
               <div className="mt-2 font-sans font-bold text-purple-600">
-                <span className="text-xl md:text-2xl">
-                  {overviewStats.totalCurrentStock.toLocaleString()}
+                <span className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  {formatOverviewVal(overviewStats.totalCurrentStock, overviewUseMt).valueStr}
                 </span>
-                <span className="text-[9px] text-purple-500 font-semibold ml-1">
-                  Kg
+                <span className="text-[10px] text-purple-500 font-bold ml-1">
+                  {formatOverviewVal(overviewStats.totalCurrentStock, overviewUseMt).unit}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
-                Sisa stok akhir saat ini
-              </p>
             </div>
 
             {/* KPI 3: Stock In */}
-            <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
+            <div className="bg-white p-4 rounded-[22px] shadow-[0_8px_24px_rgba(21,75,226,0.12)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.22)] border border-[#154be2]/15 flex flex-col justify-between relative overflow-hidden group transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-[36px] text-green-500">
                   add_shopping_cart
                 </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+              <p className="text-[10px] md:text-[11px] font-extrabold text-[#5c648e] uppercase tracking-wider leading-none mb-1">
                 STOCK IN
               </p>
               <div className="mt-2 text-green-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">
-                  {overviewStats.totalSellIn.toLocaleString()}
+                <span className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  {formatOverviewVal(overviewStats.totalSellIn, overviewUseMt).valueStr}
                 </span>
-                <span className="text-[9px] text-green-500 font-semibold ml-1">
-                  Kg
+                <span className="text-[10px] text-green-500 font-bold ml-1">
+                  {formatOverviewVal(overviewStats.totalSellIn, overviewUseMt).unit}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
-                Inflow stock bulan ini
-              </p>
             </div>
 
             {/* KPI 4: Idle Stock */}
-            <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300">
+            <div className="bg-white p-4 rounded-[22px] shadow-[0_8px_24px_rgba(21,75,226,0.12)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.22)] border border-[#154be2]/15 flex flex-col justify-between relative overflow-hidden group transition-all duration-300">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-[36px] text-indigo-500">
                   hourglass_empty
                 </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+              <p className="text-[10px] md:text-[11px] font-extrabold text-[#5c648e] uppercase tracking-wider leading-none mb-1">
                 IDLE STOCK
               </p>
               <div className="mt-2 text-indigo-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">
-                  {overviewStats.totalIdleStock.toLocaleString()}
+                <span className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  {formatOverviewVal(overviewStats.totalIdleStock, overviewUseMt).valueStr}
                 </span>
-                <span className="text-[9px] text-indigo-500 font-semibold ml-1">
-                  Kg
+                <span className="text-[10px] text-indigo-500 font-bold ml-1">
+                  {formatOverviewVal(overviewStats.totalIdleStock, overviewUseMt).unit}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
-                Stok mengendap saat ini
-              </p>
             </div>
 
             {/* KPI 5: POG */}
-            <div className="bg-white p-4 rounded-[22px] shadow-[0_12px_32px_rgba(21,75,226,0.04)] border border-[#154be2]/5 flex flex-col justify-between relative overflow-hidden group hover:shadow-[0_16px_40px_rgba(21,75,226,0.08)] transition-all duration-300 col-span-2 lg:col-span-1">
+            <div className="bg-white p-4 rounded-[22px] shadow-[0_8px_24px_rgba(21,75,226,0.12)] hover:shadow-[0_16px_40px_rgba(21,75,226,0.22)] border border-[#154be2]/15 flex flex-col justify-between relative overflow-hidden group transition-all duration-300 col-span-2 lg:col-span-1">
               <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-[36px] text-blue-500">
                   trending_up
                 </span>
               </div>
-              <p className="text-[9.5px] font-bold text-[#8E94B7] uppercase tracking-widest leading-none mb-1">
+              <p className="text-[10px] md:text-[11px] font-extrabold text-[#5c648e] uppercase tracking-wider leading-none mb-1">
                 POG
               </p>
               <div className="mt-2 text-blue-600 font-sans font-bold">
-                <span className="text-xl md:text-2xl">
-                  {overviewStats.totalSellOut.toLocaleString()}
+                <span className="text-2xl md:text-3xl font-extrabold tracking-tight">
+                  {formatOverviewVal(overviewStats.totalSellOut, overviewUseMt).valueStr}
                 </span>
-                <span className="text-[9px] text-blue-500 font-semibold ml-1">
-                  Kg
+                <span className="text-[10px] text-blue-500 font-bold ml-1">
+                  {formatOverviewVal(overviewStats.totalSellOut, overviewUseMt).unit}
                 </span>
               </div>
-              <p className="text-[8.5px] font-medium text-[#8E94B7] mt-2">
-                Total penjualan ke petani
-              </p>
             </div>
           </div>
 
-          <div className="mb-6">
+          <div className="mb-3.5">
             {renderGrandTotalCard()}
           </div>
 
@@ -10650,13 +10712,34 @@ const Dashboard = ({
               </table>
             </div>
             
-            <div className="p-5 border-t border-[#f1f5f9] bg-[#fbfaff]">
-              <div className="flex items-start gap-3">
+            <div className="p-5 border-t border-[#f1f5f9] bg-[#fbfaff] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-start gap-3 flex-1">
                 <span className="material-symbols-outlined text-[#8E94B7] text-[18px]">info</span>
                 <p className="text-[10px] font-semibold text-[#8E94B7] leading-relaxed">
                   <span className="text-[#181a2c] font-bold uppercase tracking-wider block mb-1">General Access Rules</span>
                   All levels have access to the <strong className="text-primary">Home</strong>, <strong className="text-primary">Data Partner</strong>, <strong className="text-primary">Stock Summary</strong>, and <strong className="text-primary">POG Tracking</strong> tabs. The data visible within these tabs is automatically filtered based on the user's <strong className="text-primary">Data Visibility</strong> level. The <strong className="text-primary">Access Menu</strong> tab is strictly limited to authorized system administrators.
                 </p>
+              </div>
+              
+              <div className="flex items-center justify-end gap-3 w-full md:w-auto mt-2 md:mt-0">
+                {accessSaveSuccess && (
+                  <div className="flex items-center gap-1.5 text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold animate-in fade-in slide-in-from-bottom-2">
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    Saved
+                  </div>
+                )}
+                <button
+                  onClick={handleSaveAccessRules}
+                  disabled={isSavingAccess}
+                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-[#154be2] hover:bg-[#154be2]/90 text-white px-6 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isSavingAccess ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <span className="material-symbols-outlined text-[18px]">save</span>
+                  )}
+                  {isSavingAccess ? "Saving..." : "Save Role Access"}
+                </button>
               </div>
             </div>
           </div>
@@ -12238,11 +12321,19 @@ export default function App() {
     return userData ? String(userData.position || "").trim() : "";
   }, [userData]);
 
-  const [accessRules, setAccessRules] = useState<Record<string, Record<string, boolean>>>({
-    "National Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-    "Director": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-    "General Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-    "VP": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+  const [accessRules, setAccessRules] = useState<Record<string, Record<string, boolean>>>(() => {
+    try {
+      const saved = localStorage.getItem('appAccessRules');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to load access rules from localStorage', e);
+    }
+    return {
+      "National Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "Director": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "General Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "VP": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+    };
   });
 
   const userAccess = accessRules[userPosition] || {
@@ -12262,6 +12353,33 @@ export default function App() {
   const showOverviewTab = userData ? userAccess.overview : false;
   const showTempTab = isAditya || (userData ? userAccess.temp : false);
   const showAccessTab = isAditya || (userData ? userAccess.access : false);
+
+  // Eager redirection on render to avoid layout flashing and guarantee seamless first login redirection
+  if (userData) {
+    const isCurrentTabForbidden = 
+      (activeTab === "home" && !showHomeTab) ||
+      (activeTab === "data-partner" && !showPartnerTab) ||
+      (activeTab === "stock-summary" && !showStockTab) ||
+      (activeTab === "pog-tracking" && !showPogTab) ||
+      (activeTab === "temp" && !showTempTab) ||
+      (activeTab === "overview" && !showOverviewTab) ||
+      (activeTab === "access" && !showAccessTab);
+
+    if (isCurrentTabForbidden) {
+      let targetTab = "";
+      if (showHomeTab) targetTab = "home";
+      else if (showPartnerTab) targetTab = "data-partner";
+      else if (showStockTab) targetTab = "stock-summary";
+      else if (showPogTab) targetTab = "pog-tracking";
+      else if (showOverviewTab) targetTab = "overview";
+      else if (showTempTab) targetTab = "temp";
+      else if (showAccessTab) targetTab = "access";
+
+      if (targetTab && targetTab !== activeTab) {
+        setActiveTab(targetTab);
+      }
+    }
+  }
 
   // Safety check to redirect from unauthorized or disabled tabs
   useEffect(() => {
