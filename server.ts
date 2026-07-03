@@ -3,11 +3,59 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { google } from "googleapis";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+const LOCAL_DB_PATH = path.join(process.cwd(), "local_sheets_db.json");
+
+function initLocalDb() {
+  if (fs.existsSync(LOCAL_DB_PATH)) {
+    return;
+  }
+  const defaultDb: Record<string, any[][]> = {
+    employee: [
+      ["Nama", "Email", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"],
+      ["Aditya Wiratama", "aditya@advanta.com", "Business Analyst", "Jawa Timur", "East Java", "", "12345", "1", "BIZ"],
+      ["Suryanto Budi Santoso", "suryanto@advanta.com", "National Sales Head", "Jakarta", "National", "", "12345", "2", "MGMT"],
+      ["Christien Yunianto", "christien@advanta.com", "National Sales Manager", "Jakarta", "National", "Suryanto Budi Santoso", "12345", "3", "MGMT"],
+      ["Agus Herdianto", "agus@advanta.com", "Area Sales Manager", "Jawa Timur", "East Java", "Christien Yunianto", "12345", "4", "SALES"],
+      ["Listianto", "listianto@advanta.com", "Sales Agronomist", "Jawa Timur", "East Java", "Agus Herdianto", "12345", "5", "SALES"]
+    ],
+    channel: [
+      ["Name", "PIC", "Category", "Province", "Area"],
+      ["Kiosk Maju", "Listianto", "RTL", "Jawa Timur", "East Java"],
+      ["Kiosk Jaya", "Listianto", "RTL", "Jawa Timur", "East Java"],
+      ["Kiosk Makmur", "Listianto", "RTL", "Jawa Timur", "East Java"],
+      ["Kiosk Tani", "Agus Herdianto", "RTL", "Jawa Timur", "East Java"]
+    ],
+    working: [
+      ["Timestamp", "Channel", "Name Checker", "Lot", "Quantity (kg)", "Aging (month)", "Exp Date", "Crops", "Condition", "Shipping Date", "POG", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des", "upd_jan", "upd_feb", "upd_mar", "upd_apr", "upd_mei", "upd_jun", "upd_jul", "upd_ags", "upd_sep", "upd_okt", "upd_nov", "upd_des"],
+      ["01/01/2026 10:00:00", "Kiosk Maju", "Listianto", "LOT001", "120", "2", "01/Dec/2026", "Field Corn", "tetap", "01/Jan/2026", "100", "100", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", "Listianto", "", "", "", "", "", "", "", "", "", "", ""]
+    ],
+    dr: [
+      ["Lot No", "Date", "Qty", "Hybrid", "Crops"],
+      ["LOT001", "01/Jan/2026", "200", "ADV808", "Field Corn"],
+      ["LOT002", "15/Jan/2026", "150", "ADV808", "Field Corn"]
+    ],
+    hybrid: [
+      ["Material", "Hybrid", "Crops"],
+      ["ADV808", "ADV808", "Field Corn"]
+    ],
+    access: [
+      ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"],
+      ["Business Analyst", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE"],
+      ["Sales Manager", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE"],
+      ["Area Sales Manager", "TRUE", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "FALSE"],
+      ["Sales Agronomist", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "FALSE", "FALSE"],
+      ["Business Solution", "TRUE", "TRUE", "TRUE", "TRUE", "FALSE", "FALSE", "FALSE"]
+    ]
+  };
+  fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(defaultDb, null, 2), "utf8");
+}
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.text({ type: "text/plain", limit: "50mb" }));
@@ -298,6 +346,17 @@ function invalidateCache(sheetName: string) {
 
 // Fetch helper from a specified sheet
 async function getSheetValues(sheetName: string): Promise<any[][] | null> {
+  if (!isDirectConfigured) {
+    initLocalDb();
+    try {
+      const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
+      return db[sheetName] || [];
+    } catch (e) {
+      console.error("Error reading from local DB:", e);
+      return [];
+    }
+  }
+
   const sheets = getSheetsClient();
   if (!sheets) return null;
 
@@ -344,6 +403,19 @@ async function updateSheetValues(
   sheetName: string,
   values: any[][],
 ): Promise<boolean> {
+  if (!isDirectConfigured) {
+    initLocalDb();
+    try {
+      const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
+      db[sheetName] = values;
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
+      return true;
+    } catch (e) {
+      console.error("Error writing to local DB:", e);
+      return false;
+    }
+  }
+
   const sheets = getSheetsClient();
   if (!sheets) return false;
   invalidateCache(sheetName);
@@ -371,6 +443,20 @@ async function appendSheetRow(
   sheetName: string,
   rowValues: any[],
 ): Promise<boolean> {
+  if (!isDirectConfigured) {
+    initLocalDb();
+    try {
+      const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
+      if (!db[sheetName]) db[sheetName] = [];
+      db[sheetName].push(rowValues);
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
+      return true;
+    } catch (e) {
+      console.error("Error appending to local DB:", e);
+      return false;
+    }
+  }
+
   const sheets = getSheetsClient();
   if (!sheets) return false;
   invalidateCache(sheetName);
@@ -2121,6 +2207,141 @@ async function handleDeleteEmployee(body: any) {
   return { status: "success" };
 }
 
+async function handleGetAccessRules() {
+  try {
+    const empData = await getSheetValues("employee");
+    const uniquePositions: string[] = [];
+    if (empData && empData.length > 1) {
+      const headers = empData[0];
+      const posIdx = headers.findIndex((h: any) => /position|jabatan/i.test(String(h).trim()));
+      const nameIdx = headers.findIndex((h: any) => /nama|name|pic/i.test(String(h).trim()));
+      for (let i = 1; i < empData.length; i++) {
+        const row = empData[i];
+        if (nameIdx !== -1 && !row[nameIdx]) continue;
+        const rawPos = posIdx !== -1 ? row[posIdx] : "";
+        const normalized = normalizePosition(rawPos);
+        
+        // Restrict to standard positions ONLY to prevent obsolete/unwanted positions like VP and National Head
+        const VALID_POSITIONS = [
+          "Business Analyst",
+          "Sales Manager",
+          "Area Sales Manager",
+          "Sales Agronomist",
+          "Business Solution"
+        ];
+        if (normalized && VALID_POSITIONS.includes(normalized) && !uniquePositions.includes(normalized)) {
+          uniquePositions.push(normalized);
+        }
+      }
+    }
+    if (uniquePositions.length === 0) {
+      uniquePositions.push("Business Analyst", "Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution");
+    }
+
+    const data = await getSheetValues("access");
+    const rules: Record<string, any> = {};
+    const existingPositions: string[] = [];
+
+    if (data && data.length > 1) {
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const position = String(row[0]).trim();
+        if (!position) continue;
+        existingPositions.push(position);
+        rules[position] = {
+          home: row[1] === true || String(row[1]).toUpperCase() === "TRUE",
+          partner: row[2] === true || String(row[2]).toUpperCase() === "TRUE",
+          stock: row[3] === true || String(row[3]).toUpperCase() === "TRUE",
+          pog: row[4] === true || String(row[4]).toUpperCase() === "TRUE",
+          overview: row[5] === true || String(row[5]).toUpperCase() === "TRUE",
+          temp: row[6] === true || String(row[6]).toUpperCase() === "TRUE",
+          access: row[7] === true || String(row[7]).toUpperCase() === "TRUE",
+        };
+      }
+    }
+
+    const missingPositions = uniquePositions.filter((p) => !existingPositions.includes(p));
+    if (missingPositions.length > 0) {
+      for (const p of missingPositions) {
+        let home = "TRUE";
+        let partner = "TRUE";
+        let stock = "TRUE";
+        let pog = "TRUE";
+        let overview = "FALSE";
+        let temp = "FALSE";
+        let access = "FALSE";
+
+        if (p === "Business Analyst") {
+          overview = "TRUE";
+          temp = "TRUE";
+          access = "TRUE";
+        } else if (p === "Sales Manager") {
+          overview = "TRUE";
+          temp = "TRUE";
+        } else if (p === "Area Sales Manager") {
+          overview = "TRUE";
+        }
+
+        const newRow = [p, home, partner, stock, pog, overview, temp, access];
+        await appendSheetRow("access", newRow);
+
+        rules[p] = {
+          home: home === "TRUE",
+          partner: partner === "TRUE",
+          stock: stock === "TRUE",
+          pog: pog === "TRUE",
+          overview: overview === "TRUE",
+          temp: temp === "TRUE",
+          access: access === "TRUE",
+        };
+      }
+    }
+
+    return { status: "success", data: rules };
+  } catch (error: any) {
+    return { status: "error", message: error.toString() };
+  }
+}
+
+async function handleSaveAccessRules(body: any) {
+  try {
+    const rules = body.rules || {};
+    const headers = ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"];
+    const rows: any[][] = [headers];
+
+    // Restrict the saved roles to standard 5 positions only!
+    const VALID_POSITIONS = [
+      "Business Analyst",
+      "Sales Manager",
+      "Area Sales Manager",
+      "Sales Agronomist",
+      "Business Solution"
+    ];
+
+    for (const position in rules) {
+      if (!VALID_POSITIONS.includes(position)) continue; // Filter out VP, National Head, etc.
+      const rule = rules[position];
+      rows.push([
+        position,
+        rule.home ? "TRUE" : "FALSE",
+        rule.partner ? "TRUE" : "FALSE",
+        rule.stock ? "TRUE" : "FALSE",
+        rule.pog ? "TRUE" : "FALSE",
+        rule.overview ? "TRUE" : "FALSE",
+        rule.temp ? "TRUE" : "FALSE",
+        rule.access ? "TRUE" : "FALSE",
+      ]);
+    }
+
+    await updateSheetValues("access", rows);
+    return { status: "success" };
+  } catch (error: any) {
+    return { status: "error", message: error.toString() };
+  }
+}
+
+let isAppsScriptAvailable = true;
+
 // Fallback Apps Script proxy fetcher
 async function proxyToAppsScript(
   method: string,
@@ -2159,12 +2380,11 @@ async function proxyToAppsScript(
   try {
     return JSON.parse(text);
   } catch (err: any) {
-    console.error(
-      `[Proxy Error] Received non-JSON response from Apps Script (Status: ${response.status}). Body preview:`,
-      text.substring(0, 500),
+    console.log(
+      `[Proxy Notice] Received non-JSON response from Apps Script (Status: ${response.status}). Apps Script might be unconfigured or offline.`
     );
     throw new Error(
-      `Apps Script returned invalid JSON (Status: ${response.status}, Length: ${text.length}). This usually indicates a Google Sign-in page redirect, unauthorized access, or server error. Body: ${text.substring(0, 150)}...`,
+      `Apps Script returned invalid JSON (Status: ${response.status}, Length: ${text.length}).`
     );
   }
 }
@@ -2179,8 +2399,7 @@ app.all("/api", async (req, res) => {
     `[API Call] Method: ${req.method}, Action: ${action}, User: ${user}`,
   );
 
-  // Fallback check: if credentials are not configured, forward to Apps Script instantly!
-  if (!isDirectConfigured) {
+  if (!isDirectConfigured && isAppsScriptAvailable) {
     try {
       const data = await proxyToAppsScript(
         req.method,
@@ -2190,14 +2409,10 @@ app.all("/api", async (req, res) => {
       );
       return res.json(data);
     } catch (err: any) {
-      console.error(
-        "[Proxy Error] Failed to contact Apps Script fallback:",
-        err,
+      console.log(
+        `[Proxy Notice] Apps Script is unconfigured or offline. Automatically switching to local database.`
       );
-      return res.status(500).json({
-        status: "error",
-        message: "Failed to connect to spreadsheet backend",
-      });
+      isAppsScriptAvailable = false;
     }
   }
 
@@ -2216,6 +2431,8 @@ app.all("/api", async (req, res) => {
       else if (action === "getEmployees") result = await handleGetEmployees();
       else if (action === "getInitialData")
         result = await handleGetInitialData(user);
+      else if (action === "getAccessRules")
+        result = await handleGetAccessRules();
       else {
         return res
           .status(400)
@@ -2236,6 +2453,8 @@ app.all("/api", async (req, res) => {
         result = await handleUpdateEmployee(req.body);
       else if (action === "deleteEmployee")
         result = await handleDeleteEmployee(req.body);
+      else if (action === "saveAccessRules")
+        result = await handleSaveAccessRules(req.body);
       else {
         return res
           .status(400)

@@ -1509,24 +1509,9 @@ const Dashboard = ({
   const dropdownRef = useRef(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [isUserSwitching, setIsUserSwitching] = useState(false);
-  const [isQuickSwitchVisible, setIsQuickSwitchVisible] = useState(true);
   const [historyChartType, setHistoryChartType] = useState<
     "opening" | "ending" | "stockIn" | "idle" | "pog"
   >("pog");
-
-  const handleSwitchUser = async (targetName) => {
-    if (isUserSwitching) return;
-    setIsUserSwitching(true);
-    try {
-      if (onUserSwitch) {
-        await onUserSwitch(targetName, "bypass_password");
-      }
-    } catch (err) {
-      console.error("Gagal ganti user:", err);
-    } finally {
-      setIsUserSwitching(false);
-    }
-  };
 
   const handleFullscreen = () => {
     try {
@@ -1766,31 +1751,63 @@ const Dashboard = ({
   const [isSavingAccess, setIsSavingAccess] = useState(false);
   const [accessSaveSuccess, setAccessSaveSuccess] = useState(false);
 
-  const handleSaveAccessRules = () => {
+  const handleSaveAccessRules = async () => {
     setIsSavingAccess(true);
+    const filteredRules: Record<string, Record<string, boolean>> = {};
+    allPositionsList.forEach(pos => {
+      if (accessRules[pos]) {
+        filteredRules[pos] = accessRules[pos];
+      } else {
+        filteredRules[pos] = {
+          home: true,
+          partner: true,
+          stock: true,
+          pog: true,
+          overview: pos === "Business Analyst" || pos === "Sales Manager" || pos === "Area Sales Manager",
+          temp: pos === "Business Analyst" || pos === "Sales Manager",
+          access: pos === "Business Analyst"
+        };
+      }
+    });
+
     try {
-      localStorage.setItem('appAccessRules', JSON.stringify(accessRules));
+      localStorage.setItem('appAccessRules', JSON.stringify(filteredRules));
+      setAccessRules(filteredRules);
     } catch (e) {
       console.error('Failed to save access rules', e);
     }
-    // Simulate API call to save settings
-    setTimeout(() => {
+    try {
+      const resp = await fetch(SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({
+          action: "saveAccessRules",
+          rules: filteredRules
+        })
+      });
+      const res = await resp.json();
+      if (res.status === "success") {
+        setAccessSaveSuccess(true);
+      } else {
+        console.error("Failed to save access rules to spreadsheet", res.message);
+      }
+    } catch (err) {
+      console.error("Error saving access rules to spreadsheet:", err);
+    } finally {
       setIsSavingAccess(false);
-      setAccessSaveSuccess(true);
       setTimeout(() => setAccessSaveSuccess(false), 3000);
-    }, 800);
+    }
   };
 
   const allPositionsList = useMemo(() => {
-    const positions = new Set<string>();
-    employees.forEach((e) => {
-      const pos = e.position || e.Position || e.POSITION;
-      if (pos) {
-        positions.add(String(pos).trim());
-      }
-    });
-    return Array.from(positions).sort();
-  }, [employees]);
+    return [
+      "Business Analyst",
+      "Sales Manager",
+      "Area Sales Manager",
+      "Sales Agronomist",
+      "Business Solution"
+    ];
+  }, []);
 
   const toggleAccessRule = (position: string, page: string) => {
     setAccessRules((prev: Record<string, Record<string, boolean>>) => {
@@ -2790,6 +2807,11 @@ const Dashboard = ({
 
           // Enriches and updates states inside fetchWorkingData
           await fetchWorkingData(mappedWorking, drSales);
+
+          // 4. Access Rules
+          if (res.data.accessRules && Object.keys(res.data.accessRules).length > 0) {
+            setAccessRules(res.data.accessRules);
+          }
         } else {
           console.warn(
             "getInitialData not supported or empty, doing live individual parallel fetching.",
@@ -2812,7 +2834,7 @@ const Dashboard = ({
 
     const loadIndividualDataFallback = async () => {
       try {
-        const [respEmp, respChan, respWork, respDr] = await Promise.all([
+        const [respEmp, respChan, respWork, respDr, respAccess] = await Promise.all([
           fetch(`${SCRIPT_URL}?action=getEmployees`),
           fetch(
             `${SCRIPT_URL}?action=getChannels&user=${encodeURIComponent(userData.name)}`,
@@ -2823,12 +2845,14 @@ const Dashboard = ({
           fetch(
             `${SCRIPT_URL}?action=getDrSalesData&user=${encodeURIComponent(userData.name)}`,
           ),
+          fetch(`${SCRIPT_URL}?action=getAccessRules`),
         ]);
-        const [resEmp, resChan, resWork, resDr] = await Promise.all([
+        const [resEmp, resChan, resWork, resDr, resAccess] = await Promise.all([
           respEmp.json(),
           respChan.json(),
           respWork.json(),
           respDr.json(),
+          respAccess.json(),
         ]);
 
         if (resEmp.status === "success") {
@@ -2876,6 +2900,10 @@ const Dashboard = ({
           resDr.status === "success" ? resDr.data || [] : OFFLINE_DR_SALES;
 
         await fetchWorkingData(mappedWorking, drSales);
+
+        if (resAccess.status === "success" && resAccess.data && Object.keys(resAccess.data).length > 0) {
+          setAccessRules(resAccess.data);
+        }
       } catch (fallbackErr) {
         console.warn("Fallback live fetches also failed:", fallbackErr);
         setEmployees(OFFLINE_EMPLOYEES);
@@ -5463,6 +5491,7 @@ const Dashboard = ({
         pic,
         upline,
         area,
+        rawArea: item.area || "-",
         category,
         cluster,
         hybrid: item.hybrid || "Unknown",
@@ -6385,7 +6414,7 @@ const Dashboard = ({
       if (grandTotalViewBy === "hybrid") {
         g = item.hybrid || "Unknown";
       } else if (grandTotalViewBy === "area") {
-        g = item.area || "Unknown";
+        g = (item.rawArea && item.rawArea !== "-") ? item.rawArea : "Unknown";
       }
       
       if (groupData[g] === undefined) {
@@ -7733,18 +7762,9 @@ const Dashboard = ({
                 </div>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    setIsQuickSwitchVisible((prev) => !prev);
-                  }}
-                  className="text-[10px] md:text-xs font-bold text-white uppercase bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-full border border-white/20 backdrop-blur-sm truncate cursor-pointer transition-all active:scale-[0.97] select-none"
-                  title="Klik untuk tampilkan / sembunyikan ganti akun sementara"
-                >
+                <span className="text-[10px] md:text-xs font-bold text-white uppercase bg-white/20 px-2.5 py-1 rounded-full border border-white/20 backdrop-blur-sm truncate select-none">
                   {userData.position}
-                </button>
+                </span>
                 {userData.province && userData.province !== "-" && (
                   <span className="text-[10px] md:text-xs font-bold text-white/80 uppercase bg-white/10 px-2.5 py-1 rounded-full border border-white/10 backdrop-blur-sm">
                     {userData.province}
@@ -7752,74 +7772,6 @@ const Dashboard = ({
                 )}
               </div>
             </div>
-
-            {/* Quick Switch Button List */}
-            {isQuickSwitchVisible && (
-              <div className="flex flex-col gap-1.5 mt-2.5 pt-2.5 border-t border-white/15 select-none text-left animate-in fade-in slide-in-from-top-1 duration-200">
-                <div className="flex items-center justify-between">
-                  <span className="text-[7.5px] text-white/70 font-bold uppercase tracking-wider">
-                    Quick Switch Account (Temporary):
-                  </span>
-                  {isUserSwitching && (
-                    <span className="flex items-center gap-1 text-[7.5px] text-cyan-200 font-bold animate-pulse">
-                      <svg
-                        className="animate-spin h-2.5 w-2.5 text-cyan-200"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        />
-                      </svg>
-                      Switching...
-                    </span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { name: "Aditya Wiratama", nick: "Aditya" },
-                    { name: "Suryanto Budi Santoso", nick: "Suryanto" },
-                    { name: "Christien Yunianto", nick: "Christien" },
-                    { name: "Agus Herdianto", nick: "Agus" },
-                    { name: "Listianto", nick: "Listianto" },
-                  ].map((u) => {
-                    const isActive =
-                      cleanForMatch(userData.name) === cleanForMatch(u.name);
-                    return (
-                      <button
-                        key={u.name}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          if (!isUserSwitching && !isActive) {
-                            handleSwitchUser(u.name);
-                          }
-                        }}
-                        disabled={isUserSwitching}
-                        className={`px-2 py-0.5 rounded-full text-[8.5px] font-bold transition-all cursor-pointer select-none active:scale-[0.98] ${
-                          isActive
-                            ? "bg-white text-primary shadow-[0_2px_8px_rgba(21,75,226,0.15)] ring-1 ring-white/10"
-                            : "bg-white/10 hover:bg-white/20 text-white border border-white/5"
-                        }`}
-                      >
-                        {u.nick}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -11711,12 +11663,10 @@ const Dashboard = ({
 
 // Login Screen Component
 const LoginScreen = ({ onLogin }) => {
-  const [name, setName] = useState("aditya");
-  const [password, setPassword] = useState("123");
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isManual, setIsManual] = useState(false);
-  const [loggingInUser, setLoggingInUser] = useState("");
 
   const handleLoginSubmit = async () => {
     setError("");
@@ -11733,57 +11683,6 @@ const LoginScreen = ({ onLogin }) => {
       setLoading(false);
     }
   };
-
-  const handleQuickLogin = async (selectedName) => {
-    setError("");
-    setLoading(true);
-    setLoggingInUser(selectedName);
-
-    try {
-      const result = await onLogin(selectedName, "bypass_password");
-      if (!result.success) {
-        setError(result.error || "Username tidak ditemukan di database.");
-      }
-    } catch {
-      setError("Terjadi kesalahan jaringan saat mencoba masuk.");
-    } finally {
-      setLoading(false);
-      setLoggingInUser("");
-    }
-  };
-
-  const TEMP_USERS = [
-    {
-      name: "Aditya Wiratama",
-      position: "Business Analyst",
-      color: "from-indigo-500 to-cyan-500",
-      initial: "AD",
-    },
-    {
-      name: "Suryanto Budi Santoso",
-      position: "Regional Sales Manager",
-      color: "from-emerald-500 to-teal-600",
-      initial: "SBS",
-    },
-    {
-      name: "Christien Yunianto",
-      position: "Area Sales Manager",
-      color: "from-amber-500 to-orange-600",
-      initial: "CY",
-    },
-    {
-      name: "Agus Herdianto",
-      position: "Sales Representative",
-      color: "from-rose-500 to-pink-500",
-      initial: "AH",
-    },
-    {
-      name: "Listianto",
-      position: "Field Officer",
-      color: "from-violet-500 to-fuchsia-600",
-      initial: "LI",
-    },
-  ];
 
   return (
     <div className="min-h-screen supports-[min-height:100dvh]:min-h-[100dvh] font-sans flex items-center justify-center p-6 bg-gradient-to-br from-[#F2E7FE] via-[#fbf8ff] to-[#edecff]">
@@ -11808,421 +11707,85 @@ const LoginScreen = ({ onLogin }) => {
             </div>
           )}
 
-          {!isManual ? (
-            // Quick Access / Button List
-            <div className="space-y-3">
-              <div className="flex items-center justify-between mb-1 px-1">
-                <label className="text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider">
-                  Quick Login PIC
-                </label>
-                <span className="text-[9px] bg-indigo-50 text-[#4F46E5] font-semibold px-2 py-0.5 rounded-full border border-indigo-100">
-                  Temp Mode
-                </span>
-              </div>
-
-              <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                {TEMP_USERS.map((user) => {
-                  const isUserLoggingIn = loggingInUser === user.name;
-                  return (
-                    <button
-                      key={user.name}
-                      onClick={() => !loading && handleQuickLogin(user.name)}
-                      disabled={loading}
-                      className="w-full flex items-center gap-3 bg-white hover:bg-slate-50 border border-slate-100 hover:border-slate-200/80 rounded-2xl p-3 text-left transition-all duration-200 hover:shadow-[0_4px_12px_rgba(21,75,226,0.04)] active:scale-[0.98] disabled:opacity-60 disabled:pointer-events-none group relative"
-                    >
-                      <div
-                        className={`size-10 rounded-xl bg-gradient-to-br ${user.color} flex items-center justify-center text-white text-xs font-bold shadow-md uppercase shrink-0`}
-                      >
-                        {user.initial}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-[12.5px] text-[#181a2c] group-hover:text-primary transition-colors truncate">
-                          {user.name}
-                        </p>
-                        <p className="text-[10px] text-[#8E94B7] font-medium truncate mt-0.5">
-                          {user.position}
-                        </p>
-                      </div>
-
-                      <div className="shrink-0 text-slate-300 group-hover:text-primary transition-colors mr-1">
-                        {isUserLoggingIn ? (
-                          <svg
-                            className="animate-spin h-5 w-5 text-primary"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                          >
-                            <circle
-                              className="opacity-25"
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="4"
-                            />
-                            <path
-                              className="opacity-75"
-                              fill="currentColor"
-                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                            />
-                          </svg>
-                        ) : (
-                          <span className="material-symbols-outlined text-[20px] leading-none">
-                            chevron_right
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="pt-2 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsManual(true)}
-                  disabled={loading}
-                  className="text-[10.5px] font-bold text-primary hover:text-indigo-700 underline transition-all bg-transparent border-0 cursor-pointer"
-                >
-                  Masuk Manual (Username & Password)
-                </button>
-              </div>
+          {/* Manual Form */}
+          <div className="space-y-4">
+            <div>
+              <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
+                Username / PIC Name
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={loading}
+                className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] mb-4 disabled:opacity-50"
+                placeholder="Enter your name..."
+              />
+              <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
+                Password
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+                className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] disabled:opacity-50"
+                placeholder="Enter password..."
+              />
             </div>
-          ) : (
-            // Manual Form
-            <div className="space-y-4">
-              <div>
-                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
-                  Username / PIC Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={loading}
-                  className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] mb-4 disabled:opacity-50"
-                  placeholder="Enter your name..."
-                />
-                <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
-                  Password
-                </label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                  className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] disabled:opacity-50"
-                  placeholder="Enter password..."
-                />
-              </div>
 
-              <button
-                onClick={handleLoginSubmit}
-                disabled={
-                  name.trim() === "" || password.trim() === "" || loading
-                }
-                className={`w-full h-14 rounded-full font-semibold text-xs uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 ${
-                  name.trim() === "" || password.trim() === "" || loading
-                    ? "bg-[#e0e0fa] text-[#8E94B7] cursor-not-allowed shadow-none"
-                    : "bg-gradient-to-r from-primary to-cyan-400 text-white hover:opacity-95 shadow-[0_12px_28px_rgba(21,75,226,0.35)]"
-                }`}
-              >
-                {loading ? (
-                  <>
-                    <svg
-                      className="animate-spin h-5 w-5 text-white"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <span>Logging In...</span>
-                  </>
-                ) : (
-                  <span>Enter Now</span>
-                )}
-              </button>
-
-              <div className="text-center pt-1">
-                <button
-                  type="button"
-                  onClick={() => setIsManual(false)}
-                  disabled={loading}
-                  className="text-[10.5px] font-bold text-[#8E94B7] hover:text-primary transition-all bg-transparent border-0 cursor-pointer"
-                >
-                  &larr; Kembali ke Quick Login
-                </button>
-              </div>
-            </div>
-          )}
+            <button
+              onClick={handleLoginSubmit}
+              disabled={
+                name.trim() === "" || password.trim() === "" || loading
+              }
+              className={`w-full h-14 rounded-full font-semibold text-xs uppercase tracking-wider transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2 ${
+                name.trim() === "" || password.trim() === "" || loading
+                  ? "bg-[#e0e0fa] text-[#8E94B7] cursor-not-allowed shadow-none"
+                  : "bg-gradient-to-r from-primary to-cyan-400 text-white hover:opacity-95 shadow-[0_12px_28px_rgba(21,75,226,0.35)]"
+              }`}
+            >
+              {loading ? (
+                <>
+                  <svg
+                    className="animate-spin h-5 w-5 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span>Logging In...</span>
+                </>
+              ) : (
+                <span>Enter Now</span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-const OFFLINE_EMPLOYEES = [
-  {
-    name: "Aditya Wiratama",
-    position: "Business Analyst",
-    province: "-",
-    level: 1,
-    upline: "-",
-    area: "SEMUA AREA",
-  },
-  {
-    name: "Suryanto Budi Santoso",
-    position: "Sales Manager",
-    province: "JAWA TIMUR",
-    level: 2,
-    upline: "-",
-    area: "JAWA TIMUR",
-  },
-  {
-    name: "Christien Yunianto",
-    position: "Area Sales Manager",
-    province: "JAWA TIMUR",
-    level: 3,
-    upline: "Suryanto Budi Santoso",
-    area: "KEDIRI",
-  },
-  {
-    name: "Agus Herdianto",
-    position: "Sales Agronomist",
-    province: "JAWA TIMUR",
-    level: 4,
-    upline: "Christien Yunianto",
-    area: "KEDIRI 1",
-  },
-  {
-    name: "Listianto",
-    position: "Business Solution",
-    province: "JAWA TIMUR",
-    level: 5,
-    upline: "Agus Herdianto",
-    area: "KEDIRI 2",
-  },
-];
+const OFFLINE_EMPLOYEES = [];
 
-const OFFLINE_KIOSKS = [
-  {
-    name: "Kios Tani Sejahtera",
-    pic: "Aditya Wiratama",
-    category: "Distributor",
-  },
-  { name: "Kios Madu Mulya", pic: "Listianto", category: "R1" },
-  { name: "Kios Berkah Subur", pic: "Listianto", category: "R2" },
-  { name: "Toko Makmur Tani", pic: "Agus Herdianto", category: "R1" },
-  { name: "Kios Tani Harapan", pic: "Agus Herdianto", category: "R2" },
-  {
-    name: "Toko Bunga Makmur",
-    pic: "Christien Yunianto",
-    category: "Distributor",
-  },
-  {
-    name: "Kios Sumber Makmur",
-    pic: "Suryanto Budi Santoso",
-    category: "Silver",
-  },
-  { name: "Toko Padi Mas", pic: "Listianto", category: "Gold" },
-];
+const OFFLINE_KIOSKS = [];
 
-const OFFLINE_WORKING_DATA = [
-  {
-    id: "off_1",
-    timestamp: "15/06/2026 10:00:00",
-    kiosk: "Kios Madu Mulya",
-    lot: "ADV53878",
-    hybrid: "ADV 112",
-    crops: "Corn",
-    condition: "tetap",
-    stock: 1200,
-    user: "Listianto",
-    lastQty: 1000,
-    currentQty: 1200,
-    pog: 900,
-    sellIn: 1200,
-    sellOut: 800,
-    totalInv: 1200,
-    idleStock: 300,
-    drDate: "2026-01-20",
-    expired: "2027-01-20",
-    jan: 100,
-    feb: 120,
-    mar: 150,
-    apr: 110,
-    mei: 130,
-    jun: 140,
-    jul: 150,
-    ags: 0,
-    sep: 0,
-    okt: 0,
-    nov: 0,
-    des: 0,
-    upd_jan: "",
-    upd_feb: "",
-    upd_mar: "",
-    upd_apr: "sales",
-    upd_mei: "sales",
-    upd_jun: "sales",
-    upd_jul: "",
-    upd_ags: "",
-    upd_sep: "",
-    upd_okt: "",
-    upd_nov: "",
-    upd_des: "",
-  },
-  {
-    id: "off_2",
-    timestamp: "15/06/2026 10:15:00",
-    kiosk: "Kios Berkah Subur",
-    lot: "ADV11099",
-    hybrid: "ADV 205",
-    crops: "Corn",
-    condition: "tetap",
-    stock: 850,
-    user: "Listianto",
-    lastQty: 800,
-    currentQty: 850,
-    pog: 700,
-    sellIn: 900,
-    sellOut: 650,
-    totalInv: 850,
-    idleStock: 150,
-    drDate: "2026-02-15",
-    expired: "2027-02-15",
-    jan: 80,
-    feb: 90,
-    mar: 110,
-    apr: 85,
-    mei: 95,
-    jun: 100,
-    jul: 90,
-    ags: 0,
-    sep: 0,
-    okt: 0,
-    nov: 0,
-    des: 0,
-    upd_jan: "",
-    upd_feb: "",
-    upd_mar: "",
-    upd_apr: "sales",
-    upd_mei: "sales",
-    upd_jun: "sales",
-    upd_jul: "",
-    upd_ags: "",
-    upd_sep: "",
-    upd_okt: "",
-    upd_nov: "",
-    upd_des: "",
-  },
-  {
-    id: "off_3",
-    timestamp: "15/06/2026 11:30:00",
-    kiosk: "Toko Makmur Tani",
-    lot: "ADV53878",
-    hybrid: "ADV 112",
-    crops: "Corn",
-    condition: "tetap",
-    stock: 1500,
-    user: "Agus Herdianto",
-    lastQty: 1400,
-    currentQty: 1500,
-    pog: 1200,
-    sellIn: 1500,
-    sellOut: 1100,
-    totalInv: 1500,
-    idleStock: 400,
-    drDate: "2026-01-20",
-    expired: "2027-01-20",
-    jan: 150,
-    feb: 160,
-    mar: 180,
-    apr: 140,
-    mei: 160,
-    jun: 170,
-    jul: 180,
-    ags: 0,
-    sep: 0,
-    okt: 0,
-    nov: 0,
-    des: 0,
-    upd_jan: "",
-    upd_feb: "",
-    upd_mar: "",
-    upd_apr: "sales",
-    upd_mei: "sales",
-    upd_jun: "sales",
-    upd_jul: "",
-    upd_ags: "",
-    upd_sep: "",
-    upd_okt: "",
-    upd_nov: "",
-    upd_des: "",
-  },
-  {
-    id: "off_4",
-    timestamp: "15/06/2026 11:45:00",
-    kiosk: "Kios Tani Harapan",
-    lot: "ADV99881",
-    hybrid: "ADV 112",
-    crops: "Corn",
-    condition: "tetap",
-    stock: 600,
-    user: "Agus Herdianto",
-    lastQty: 500,
-    currentQty: 600,
-    pog: 450,
-    sellIn: 650,
-    sellOut: 400,
-    totalInv: 600,
-    idleStock: 200,
-    drDate: "2026-03-10",
-    expired: "2027-03-10",
-    jan: 50,
-    feb: 60,
-    mar: 70,
-    apr: 55,
-    mei: 65,
-    jun: 70,
-    jul: 75,
-    ags: 0,
-    sep: 0,
-    okt: 0,
-    nov: 0,
-    des: 0,
-    upd_jan: "",
-    upd_feb: "",
-    upd_mar: "",
-    upd_apr: "sales",
-    upd_mei: "sales",
-    upd_jun: "sales",
-    upd_jul: "",
-    upd_ags: "",
-    upd_sep: "",
-    upd_okt: "",
-    upd_nov: "",
-    upd_des: "",
-  },
-];
+const OFFLINE_WORKING_DATA = [];
 
-const OFFLINE_DR_SALES = [
-  { lot: "ADV53878", drDate: "2026-01-20", expired: "2027-01-20" },
-  { lot: "ADV11099", drDate: "2026-02-15", expired: "2027-02-15" },
-  { lot: "ADV99881", drDate: "2026-03-10", expired: "2027-03-10" },
-];
+const OFFLINE_DR_SALES = [];
 
 const INDO_MONTHS = [
   "Januari",
@@ -12268,10 +11831,47 @@ const CustomXAxisTick = (props: any) => {
 };
 
 export default function App() {
-  const [userData, setUserData] = useState(null);
+  const [userData, setUserData] = useState(() => {
+    try {
+      const saved = localStorage.getItem("radar_user_session");
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error("Failed to load user session", e);
+    }
+    return null;
+  });
+
+  const saveUserSession = (data: any) => {
+    try {
+      if (data) {
+        localStorage.setItem("radar_user_session", JSON.stringify(data));
+        localStorage.removeItem("radar_logged_out");
+      } else {
+        localStorage.removeItem("radar_user_session");
+        localStorage.setItem("radar_logged_out", "true");
+      }
+    } catch (e) {
+      console.error("Failed to save user session", e);
+    }
+    setUserData(data);
+  };
+
+  const handleLogout = () => {
+    saveUserSession(null);
+  };
   const [activeTab, setActiveTab] = useState("home");
   const [isMenuVisible, setIsMenuVisible] = useState(true);
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(true);
+
+  const isBusinessAnalyst = useMemo(() => {
+    if (!userData) return false;
+    return (
+      (userData.position &&
+        cleanForMatch(userData.position) === "businessanalyst") ||
+      cleanForMatch(userData.name || "") === "adityawiratama" ||
+      cleanForMatch(userData.name || "") === "aditya"
+    );
+  }, [userData]);
 
   // Filter states for Executive Overview Tab
   const [overviewMetricFilter, setOverviewMetricFilter] = useState<
@@ -12329,10 +11929,11 @@ export default function App() {
       console.error('Failed to load access rules from localStorage', e);
     }
     return {
-      "National Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-      "Director": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-      "General Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
-      "VP": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "Business Analyst": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
+      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
+      "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "Sales Agronomist": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Business Solution": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
     };
   });
 
@@ -12341,9 +11942,9 @@ export default function App() {
     partner: true,
     stock: true,
     pog: true,
-    overview: userPosition === "National Head" || userPosition === "Director" || userPosition === "General Manager" || userPosition === "VP",
-    temp: false,
-    access: false
+    overview: userPosition === "Business Analyst" || userPosition === "Sales Manager" || userPosition === "Area Sales Manager",
+    temp: userPosition === "Business Analyst" || userPosition === "Sales Manager",
+    access: userPosition === "Business Analyst"
   };
 
   const showHomeTab = userData ? userAccess.home : false;
@@ -12358,9 +11959,9 @@ export default function App() {
   if (userData) {
     const isCurrentTabForbidden = 
       (activeTab === "home" && !showHomeTab) ||
-      (activeTab === "data-partner" && !showPartnerTab) ||
-      (activeTab === "stock-summary" && !showStockTab) ||
-      (activeTab === "pog-tracking" && !showPogTab) ||
+      (activeTab === "partner" && !showPartnerTab) ||
+      (activeTab === "summary" && !showStockTab) ||
+      (activeTab === "pog" && !showPogTab) ||
       (activeTab === "temp" && !showTempTab) ||
       (activeTab === "overview" && !showOverviewTab) ||
       (activeTab === "access" && !showAccessTab);
@@ -12368,9 +11969,9 @@ export default function App() {
     if (isCurrentTabForbidden) {
       let targetTab = "";
       if (showHomeTab) targetTab = "home";
-      else if (showPartnerTab) targetTab = "data-partner";
-      else if (showStockTab) targetTab = "stock-summary";
-      else if (showPogTab) targetTab = "pog-tracking";
+      else if (showPartnerTab) targetTab = "partner";
+      else if (showStockTab) targetTab = "summary";
+      else if (showPogTab) targetTab = "pog";
       else if (showOverviewTab) targetTab = "overview";
       else if (showTempTab) targetTab = "temp";
       else if (showAccessTab) targetTab = "access";
@@ -12386,24 +11987,31 @@ export default function App() {
     if (userData) {
       if (
         (!showHomeTab && activeTab === "home") ||
-        (!showPartnerTab && activeTab === "data-partner") ||
-        (!showStockTab && activeTab === "stock-summary") ||
-        (!showPogTab && activeTab === "pog-tracking") ||
+        (!showPartnerTab && activeTab === "partner") ||
+        (!showStockTab && activeTab === "summary") ||
+        (!showPogTab && activeTab === "pog") ||
         (!showTempTab && activeTab === "temp") ||
         (!showOverviewTab && activeTab === "overview") ||
         (!showAccessTab && activeTab === "access")
       ) {
         // Find first available tab
         if (showHomeTab) setActiveTab("home");
-        else if (showPartnerTab) setActiveTab("data-partner");
-        else if (showStockTab) setActiveTab("stock-summary");
-        else if (showPogTab) setActiveTab("pog-tracking");
+        else if (showPartnerTab) setActiveTab("partner");
+        else if (showStockTab) setActiveTab("summary");
+        else if (showPogTab) setActiveTab("pog");
         else if (showOverviewTab) setActiveTab("overview");
         else if (showTempTab) setActiveTab("temp");
         else if (showAccessTab) setActiveTab("access");
       }
     }
   }, [userData, activeTab, showHomeTab, showPartnerTab, showStockTab, showPogTab, showTempTab, showOverviewTab, showAccessTab]);
+
+  // Redirect Business Analysts to Executive Overview landing page upon login so they don't see the blank-ish/info page on Home tab
+  useEffect(() => {
+    if (userData && isBusinessAnalyst && activeTab === "home") {
+      setActiveTab("overview");
+    }
+  }, [userData, isBusinessAnalyst]);
 
   // Load Google Material Symbols for icons
   useEffect(() => {
@@ -12439,7 +12047,7 @@ export default function App() {
         } else {
           data.position = normalizePosition(data.position);
         }
-        setUserData(data);
+        saveUserSession(data);
         return { success: true };
       } else {
         const cleanName = cleanForMatch(name);
@@ -12450,7 +12058,7 @@ export default function App() {
               cleanForMatch(u.name) === "adityawiratama"),
         );
         if (matchedLocal) {
-          setUserData({ ...matchedLocal });
+          saveUserSession({ ...matchedLocal });
           return { success: true };
         }
         return {
@@ -12468,7 +12076,7 @@ export default function App() {
             cleanForMatch(u.name) === "adityawiratama"),
       );
       if (matchedLocal) {
-        setUserData({ ...matchedLocal });
+        saveUserSession({ ...matchedLocal });
         return { success: true };
       }
       return { success: false, error: "Terjadi kesalahan jaringan." };
@@ -12478,7 +12086,12 @@ export default function App() {
   useEffect(() => {
     const runAutoLogin = async () => {
       try {
-        await handleLogin("Aditya Wiratama", "bypass_password");
+        const savedSession = localStorage.getItem("radar_user_session");
+
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession);
+          setUserData(parsed);
+        }
       } catch (err) {
         console.warn("Auto login error:", err);
       } finally {
@@ -12505,7 +12118,7 @@ export default function App() {
             Membuka Workspace...
           </h3>
           <p className="text-[#8E94B7] text-[9px] font-semibold uppercase tracking-widest">
-            Bypass login menuju Akun Aditya Wiratama
+            Memeriksa Sesi Pengguna
           </p>
         </div>
       </div>
@@ -12677,7 +12290,7 @@ export default function App() {
 
         <div className="p-3 lg:p-4 pb-6 border-t border-[#154be2]/10">
           <button
-            onClick={() => setUserData(null)}
+            onClick={handleLogout}
             className="flex items-center justify-center lg:justify-start gap-3 h-12 w-full rounded-xl transition-all text-[#8E94B7] hover:bg-red-50 hover:text-red-600"
           >
             <span className="material-symbols-outlined ml-0 lg:ml-4">
@@ -12694,7 +12307,7 @@ export default function App() {
         <Dashboard
           userData={userData}
           activeTab={activeTab}
-          onLogout={() => setUserData(null)}
+          onLogout={handleLogout}
           onUserSwitch={handleLogin}
           setUserData={setUserData}
           setActiveTab={setActiveTab}

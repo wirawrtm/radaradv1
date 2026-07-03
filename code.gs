@@ -217,6 +217,7 @@ function doGet(e) {
     if (action === 'getUserProfile') return handleGetUserProfile(user);
     if (action === 'getEmployees') return handleGetEmployees();
     if (action === 'getInitialData') return handleGetInitialData(user);
+    if (action === 'getAccessRules') return handleGetAccessRules();
     
     return ContentService.createTextOutput("Endpoint RADAR ADVANTA App Aktif").setMimeType(ContentService.MimeType.TEXT);
   } catch (error) {
@@ -235,6 +236,7 @@ function doPost(e) {
     if (action === 'deletePartner') return handleDeletePartner(body);
     if (action === 'updateEmployee') return handleUpdateEmployee(body);
     if (action === 'deleteEmployee') return handleDeleteEmployee(body);
+    if (action === 'saveAccessRules') return handleSaveAccessRules(body);
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Unknown action' })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
@@ -957,7 +959,8 @@ function handleGetWorkingData(user) {
     cond: getIdx(/^condition$|^kondisi$/i),
     dr: getIdx(/^shipping date$|^dr date$/i),
     user: getIdx(/^name checker$|^nama checker$|^user$|^pic$|^checker$/i),
-    pog: getIdx(/^pog$|^selisih$/i)
+    pog: getIdx(/^pog$|^selisih$/i),
+    area: getIdx(/^area$|^region$/i)
   };
   const monthIndices = getMonthIndices(headers);
   const updMonthIndices = getUpdMonthIndices(headers);
@@ -974,7 +977,8 @@ function handleGetWorkingData(user) {
           timestamp: idx.time !== -1 && row[idx.time] ? row[idx.time] : '',
           condition: idx.cond !== -1 && row[idx.cond] ? row[idx.cond] : 'tetap',
           user: idx.user !== -1 && row[idx.user] ? String(row[idx.user]).trim() : '',
-          pog: idx.pog !== -1 && row[idx.pog] !== '' ? Number(row[idx.pog]) : 0
+          pog: idx.pog !== -1 && row[idx.pog] !== '' ? Number(row[idx.pog]) : 0,
+          area: idx.area !== -1 ? row[idx.area] : ''
       };
       
       const months = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Ags", "Sep", "Okt", "Nov", "Des"];
@@ -1482,6 +1486,7 @@ function handleGetInitialData(user) {
     var channelsJson = JSON.parse(handleGetChannels(user).getContent());
     var workingDataJson = JSON.parse(handleGetWorkingData(user).getContent());
     var drSalesDataJson = JSON.parse(handleGetDrSalesData(user).getContent());
+    var accessRulesJson = JSON.parse(handleGetAccessRules().getContent());
     
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
@@ -1490,9 +1495,138 @@ function handleGetInitialData(user) {
         employees: employeesJson.status === 'success' ? employeesJson.data : [],
         channels: channelsJson.status === 'success' ? channelsJson.data : [],
         workingData: workingDataJson.status === 'success' ? workingDataJson.data : [],
-        drSalesData: drSalesDataJson.status === 'success' ? drSalesDataJson.data : []
+        drSalesData: drSalesDataJson.status === 'success' ? drSalesDataJson.data : [],
+        accessRules: accessRulesJson.status === 'success' ? accessRulesJson.data : {}
       }
     })).setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function handleGetAccessRules() {
+  try {
+    // 1. Get unique positions from employee sheet
+    const empData = getSheetValuesCached('employee');
+    const uniquePositions = [];
+    if (empData && empData.length > 1) {
+      const headers = empData[0];
+      const posIdx = headers.findIndex(h => /position|jabatan/i.test(String(h).trim()));
+      const nameIdx = headers.findIndex(h => /nama|name|pic/i.test(String(h).trim()));
+      for (let i = 1; i < empData.length; i++) {
+        const row = empData[i];
+        if (nameIdx !== -1 && !row[nameIdx]) continue;
+        const rawPos = posIdx !== -1 ? row[posIdx] : '';
+        const normalized = normalizePosition(rawPos);
+        if (normalized && uniquePositions.indexOf(normalized) === -1) {
+          uniquePositions.push(normalized);
+        }
+      }
+    }
+    if (uniquePositions.length === 0) {
+      uniquePositions.push("Business Analyst", "Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution");
+    }
+
+    let sheet = SS.getSheetByName('access');
+    let isNewSheet = false;
+    if (!sheet) {
+      sheet = SS.insertSheet('access');
+      sheet.appendRow(["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]);
+      isNewSheet = true;
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    const rules = {};
+    const existingPositions = [];
+    
+    if (!isNewSheet && data.length > 1) {
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        const position = String(row[0]).trim();
+        if (!position) continue;
+        existingPositions.push(position);
+        
+        rules[position] = {
+          home: row[1] === true || String(row[1]).toUpperCase() === 'TRUE',
+          partner: row[2] === true || String(row[2]).toUpperCase() === 'TRUE',
+          stock: row[3] === true || String(row[3]).toUpperCase() === 'TRUE',
+          pog: row[4] === true || String(row[4]).toUpperCase() === 'TRUE',
+          overview: row[5] === true || String(row[5]).toUpperCase() === 'TRUE',
+          temp: row[6] === true || String(row[6]).toUpperCase() === 'TRUE',
+          access: row[7] === true || String(row[7]).toUpperCase() === 'TRUE',
+        };
+      }
+    }
+
+    // Determine missing positions and add them with default rules
+    const missingPositions = uniquePositions.filter(p => existingPositions.indexOf(p) === -1);
+    if (isNewSheet || missingPositions.length > 0) {
+      missingPositions.forEach(p => {
+        let home = "TRUE";
+        let partner = "TRUE";
+        let stock = "TRUE";
+        let pog = "TRUE";
+        let overview = "FALSE";
+        let temp = "FALSE";
+        let access = "FALSE";
+        
+        if (p === "Business Analyst") {
+          overview = "TRUE";
+          temp = "TRUE";
+          access = "TRUE";
+        } else if (p === "Sales Manager") {
+          overview = "TRUE";
+          temp = "TRUE";
+        } else if (p === "Area Sales Manager") {
+          overview = "TRUE";
+        }
+        
+        sheet.appendRow([p, home, partner, stock, pog, overview, temp, access]);
+        
+        rules[p] = {
+          home: home === "TRUE",
+          partner: partner === "TRUE",
+          stock: stock === "TRUE",
+          pog: pog === "TRUE",
+          overview: overview === "TRUE",
+          temp: temp === "TRUE",
+          access: access === "TRUE"
+        };
+      });
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: rules })).setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function handleSaveAccessRules(body) {
+  try {
+    let sheet = SS.getSheetByName('access');
+    if (!sheet) {
+      sheet = SS.insertSheet('access');
+    }
+    
+    sheet.clear();
+    sheet.appendRow(["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]);
+    
+    const rules = body.rules || {};
+    for (const position in rules) {
+      const rule = rules[position];
+      sheet.appendRow([
+        position,
+        rule.home ? "TRUE" : "FALSE",
+        rule.partner ? "TRUE" : "FALSE",
+        rule.stock ? "TRUE" : "FALSE",
+        rule.pog ? "TRUE" : "FALSE",
+        rule.overview ? "TRUE" : "FALSE",
+        rule.temp ? "TRUE" : "FALSE",
+        rule.access ? "TRUE" : "FALSE"
+      ]);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: error.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
