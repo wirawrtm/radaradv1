@@ -1028,7 +1028,7 @@ const EmployeeEditModal = ({
   useEffect(() => {
     if (item) {
       setName(String(item.name || ""));
-      setEmail(String(item.email || ""));
+      setEmail(String(item.user || item.email || ""));
       setPassword(String(item.password || ""));
       setUpline(String(item.upline || ""));
 
@@ -1053,6 +1053,7 @@ const EmployeeEditModal = ({
       {
         name,
         email,
+        user: email,
         position,
         province,
         password,
@@ -12058,13 +12059,17 @@ export default function App() {
         const dbPassword = String(data.password || "").trim();
         const inputPassword = String(password || "").trim();
 
-        if (password !== "bypass_password" && inputPassword !== dbPassword) {
+        if (inputPassword !== dbPassword) {
           return { success: false, error: "Password salah." };
         }
 
         const isAditya =
           cleanForMatch(name) === "adityawiratama" ||
-          cleanForMatch(name) === "aditya";
+          cleanForMatch(name) === "aditya" ||
+          cleanForMatch(data.name || "") === "adityawiratama" ||
+          cleanForMatch(data.name || "") === "aditya" ||
+          cleanForMatch(data.user || "") === "aditya" ||
+          cleanForMatch(data.user || "") === "adityawiratama";
         if (isAditya) {
           data.position = "Business Analyst";
         } else {
@@ -12073,17 +12078,6 @@ export default function App() {
         saveUserSession(data);
         return { success: true };
       } else {
-        const cleanName = cleanForMatch(name);
-        const matchedLocal = OFFLINE_EMPLOYEES.find(
-          (u) =>
-            cleanForMatch(u.name) === cleanName ||
-            (cleanName === "aditya" &&
-              cleanForMatch(u.name) === "adityawiratama"),
-        );
-        if (matchedLocal) {
-          saveUserSession({ ...matchedLocal });
-          return { success: true };
-        }
         return {
           success: false,
           error: res.message || "Username tidak ditemukan.",
@@ -12091,17 +12085,6 @@ export default function App() {
       }
     } catch (e) {
       console.warn("Login call error:", e);
-      const cleanName = cleanForMatch(name);
-      const matchedLocal = OFFLINE_EMPLOYEES.find(
-        (u) =>
-          cleanForMatch(u.name) === cleanName ||
-          (cleanName === "aditya" &&
-            cleanForMatch(u.name) === "adityawiratama"),
-      );
-      if (matchedLocal) {
-        saveUserSession({ ...matchedLocal });
-        return { success: true };
-      }
       return { success: false, error: "Terjadi kesalahan jaringan." };
     }
   };

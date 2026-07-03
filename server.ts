@@ -18,12 +18,11 @@ function initLocalDb() {
   }
   const defaultDb: Record<string, any[][]> = {
     employee: [
-      ["Nama", "Email", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"],
-      ["Aditya Wiratama", "aditya@advanta.com", "Business Analyst", "Jawa Timur", "East Java", "", "12345", "1", "BIZ"],
-      ["Suryanto Budi Santoso", "suryanto@advanta.com", "National Sales Head", "Jakarta", "National", "", "12345", "2", "MGMT"],
-      ["Christien Yunianto", "christien@advanta.com", "National Sales Manager", "Jakarta", "National", "Suryanto Budi Santoso", "12345", "3", "MGMT"],
-      ["Agus Herdianto", "agus@advanta.com", "Area Sales Manager", "Jawa Timur", "East Java", "Christien Yunianto", "12345", "4", "SALES"],
-      ["Listianto", "listianto@advanta.com", "Sales Agronomist", "Jawa Timur", "East Java", "Agus Herdianto", "12345", "5", "SALES"]
+      ["Nama", "Email", "User", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"],
+      ["Aditya Wiratama", "ADITYAHEADOFFICE", "adityaheadoffice", "Business Analyst", "Head Office", "Head Office", "-", "123", "5", "All"],
+      ["Suryanto Budi Santoso", "SURYANTOHEAD", "suryantohead", "Vegetables Sales Manager", "Head Office", "Head Office", "Yash Pal Rathore", "123", "2", "Vegetables"],
+      ["Dani Adi Prasetya", "DANIHEADOFFICE", "daniheadoffice", "Commercial Lead", "Head Office", "Head Office", "Yash Pal Rathore", "123", "4", "Field Corn"],
+      ["Yash Pal Rathore", "YASHHEADOFFICE", "yashheadoffice", "Country Head", "Head Office", "Head Office", "-", "123", "5", "All"]
     ],
     channel: [
       ["Name", "PIC", "Category", "Province", "Area"],
@@ -475,25 +474,38 @@ async function appendSheetRow(
 }
 
 // User mappings cached during operations
+function findEmployeeRow(user: string, empData: any[][]): any | null {
+  if (!user || !empData || empData.length <= 1) return null;
+  const headers = empData[0];
+  const emailIdx = headers.findIndex((h: any) => /email/i.test(String(h).trim()));
+  const userIdx = headers.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
+  const nameIdx = headers.findIndex((h: any) => /nama|name|pic/i.test(String(h).trim()));
+
+  const lowerUser = String(user).trim().toLowerCase();
+
+  for (let i = 1; i < empData.length; i++) {
+    const row = empData[i];
+    const rowName = nameIdx !== -1 ? String(row[nameIdx] || "").trim().toLowerCase() : "";
+    const rowEmail = emailIdx !== -1 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
+    const rowUser = userIdx !== -1 ? String(row[userIdx] || "").trim().toLowerCase() : "";
+
+    if (rowUser === lowerUser || rowName === lowerUser || rowEmail === lowerUser) {
+      return row;
+    }
+  }
+  return null;
+}
+
 function getUserGroup(userName: string, empData: any[][]): string {
   if (!userName || !empData || empData.length <= 1) return "";
   const headers = empData[0];
-  const idx = {
-    name: headers.findIndex((h: any) =>
-      /nama|name|pic/i.test(String(h).trim()),
-    ),
-    group: headers.findIndex((h: any) =>
-      /group|tim|divisi|division/i.test(String(h).trim()),
-    ),
-  };
-  if (idx.name === -1 || idx.group === -1) return "";
-  const cleanUser = cleanForMatch(userName);
-  for (let i = 1; i < empData.length; i++) {
-    const row = empData[i];
-    const empName = String(row[idx.name] || "").trim();
-    if (cleanForMatch(empName) === cleanUser) {
-      return String(row[idx.group] || "").trim();
-    }
+  const groupIdx = headers.findIndex((h: any) =>
+    /group|tim|divisi|division/i.test(String(h).trim()),
+  );
+  if (groupIdx === -1) return "";
+  const row = findEmployeeRow(userName, empData);
+  if (row) {
+    return String(row[groupIdx] || "").trim();
   }
   return "";
 }
@@ -501,41 +513,25 @@ function getUserGroup(userName: string, empData: any[][]): string {
 function getUserProvince(userName: string, empData: any[][]): string {
   if (!userName || !empData || empData.length <= 1) return "";
   const headers = empData[0];
-  const idx = {
-    name: headers.findIndex((h: any) =>
-      /nama|name|pic/i.test(String(h).trim()),
-    ),
-    email: headers.findIndex((h: any) => /email|user/i.test(String(h).trim())),
-    prov: headers.findIndex((h: any) =>
-      /province|provinsi/i.test(String(h).trim()),
-    ),
-    area: headers.findIndex((h: any) => /area/i.test(String(h).trim())),
-  };
-  if (idx.name === -1) return "";
-  const cleanUser = cleanForMatch(userName);
-  for (let i = 1; i < empData.length; i++) {
-    const row = empData[i];
-    const empName = String(row[idx.name] || "").trim();
-    const empEmail =
-      idx.email !== -1 ? String(row[idx.email] || "").trim() : "";
+  const provIdx = headers.findIndex((h: any) =>
+    /province|provinsi/i.test(String(h).trim()),
+  );
+  const areaIdx = headers.findIndex((h: any) => /area/i.test(String(h).trim()));
+  const row = findEmployeeRow(userName, empData);
+  if (row) {
     if (
-      cleanForMatch(empName) === cleanUser ||
-      cleanForMatch(empEmail) === cleanUser
+      provIdx !== -1 &&
+      row[provIdx] !== "" &&
+      row[provIdx] !== undefined
     ) {
-      if (
-        idx.prov !== -1 &&
-        row[idx.prov] !== "" &&
-        row[idx.prov] !== undefined
-      ) {
-        return String(row[idx.prov]).trim();
-      }
-      if (
-        idx.area !== -1 &&
-        row[idx.area] !== "" &&
-        row[idx.area] !== undefined
-      ) {
-        return String(row[idx.area]).trim();
-      }
+      return String(row[provIdx]).trim();
+    }
+    if (
+      areaIdx !== -1 &&
+      row[areaIdx] !== "" &&
+      row[areaIdx] !== undefined
+    ) {
+      return String(row[areaIdx]).trim();
     }
   }
   return "";
@@ -546,9 +542,6 @@ function findEmployeeDetails(picName: string, empData: any[][]) {
   if (!picName || !empData || empData.length <= 1) return result;
   const headers = empData[0];
   const idx = {
-    name: headers.findIndex((h: any) =>
-      /nama|name|pic/i.test(String(h).trim()),
-    ),
     upline: headers.findIndex((h: any) =>
       /upline|spv|supervisor|atasan|manager/i.test(String(h).trim()),
     ),
@@ -557,27 +550,22 @@ function findEmployeeDetails(picName: string, empData: any[][]) {
       /province|provinsi/i.test(String(h).trim()),
     ),
   };
-  const picClean = cleanForMatch(picName);
-  for (let i = 1; i < empData.length; i++) {
-    const row = empData[i];
-    const empName = idx.name !== -1 ? String(row[idx.name] || "").trim() : "";
-    if (cleanForMatch(empName) === picClean) {
-      if (idx.upline !== -1)
-        result.upline = String(row[idx.upline] || "").trim();
-      if (
-        idx.area !== -1 &&
-        row[idx.area] !== "" &&
-        row[idx.area] !== undefined
-      ) {
-        result.area = String(row[idx.area]).trim();
-      } else if (
-        idx.prov !== -1 &&
-        row[idx.prov] !== "" &&
-        row[idx.prov] !== undefined
-      ) {
-        result.area = String(row[idx.prov]).trim();
-      }
-      break;
+  const row = findEmployeeRow(picName, empData);
+  if (row) {
+    if (idx.upline !== -1)
+      result.upline = String(row[idx.upline] || "").trim();
+    if (
+      idx.area !== -1 &&
+      row[idx.area] !== "" &&
+      row[idx.area] !== undefined
+    ) {
+      result.area = String(row[idx.area]).trim();
+    } else if (
+      idx.prov !== -1 &&
+      row[idx.prov] !== "" &&
+      row[idx.prov] !== undefined
+    ) {
+      result.area = String(row[idx.prov]).trim();
     }
   }
   return result;
@@ -712,46 +700,37 @@ async function handleGetChannels(user: string) {
       ),
     };
 
+    const matchedRow = findEmployeeRow(user, empData);
     let isBusinessAnalyst =
       lowerUser === "adityawiratama" ||
       lowerUser.includes("adityawiratama") ||
       lowerUser.includes("analyst");
     const userAliases = new Set([lowerUser]);
 
-    empData.slice(1).forEach((row) => {
-      const rowName =
-        idxE.name !== -1
-          ? String(row[idxE.name] || "")
-              .trim()
-              .toLowerCase()
-          : "";
-      const rowEmail =
-        idxE.email !== -1
-          ? String(row[idxE.email] || "")
-              .trim()
-              .toLowerCase()
-          : "";
-      const rowPos =
-        idxE.pos !== -1
-          ? String(row[idxE.pos] || "")
-              .trim()
-              .toLowerCase()
-          : "";
-      const isUser = rowName === lowerUser || rowEmail === lowerUser;
-      if (isUser) {
-        if (rowName !== "") userAliases.add(rowName);
-        if (rowEmail !== "") userAliases.add(rowEmail);
-        if (
-          rowPos.includes("analyst") ||
-          rowPos.includes("business analyst") ||
-          rowPos.includes("businessanalyst")
-        ) {
-          isBusinessAnalyst = true;
-        }
+    if (matchedRow) {
+      const emailIdx = empHeaders.findIndex((h: any) => /email/i.test(String(h).trim()));
+      const userIdx = empHeaders.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
+      const rowName = idxE.name !== -1 ? String(matchedRow[idxE.name] || "").trim().toLowerCase() : "";
+      const rowEmail = emailIdx !== -1 ? String(matchedRow[emailIdx] || "").trim().toLowerCase() : "";
+      const rowUser = userIdx !== -1 ? String(matchedRow[userIdx] || "").trim().toLowerCase() : "";
+      const rowPos = idxE.pos !== -1 ? String(matchedRow[idxE.pos] || "").trim().toLowerCase() : "";
+
+      if (rowName !== "") userAliases.add(rowName);
+      if (rowEmail !== "") userAliases.add(rowEmail);
+      if (rowUser !== "") userAliases.add(rowUser);
+
+      if (
+        rowPos.includes("analyst") ||
+        rowPos.includes("business analyst") ||
+        rowPos.includes("businessanalyst")
+      ) {
+        isBusinessAnalyst = true;
       }
-    });
+    }
 
     if (isBusinessAnalyst) {
+      const emailIdx = empHeaders.findIndex((h: any) => /email/i.test(String(h).trim()));
+      const userIdx = empHeaders.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
       empData.slice(1).forEach((row) => {
         const rowName =
           idxE.name !== -1
@@ -760,13 +739,20 @@ async function handleGetChannels(user: string) {
                 .toLowerCase()
             : "";
         const rowEmail =
-          idxE.email !== -1
-            ? String(row[idxE.email] || "")
+          emailIdx !== -1
+            ? String(row[emailIdx] || "")
+                .trim()
+                .toLowerCase()
+            : "";
+        const rowUser =
+          userIdx !== -1
+            ? String(row[userIdx] || "")
                 .trim()
                 .toLowerCase()
             : "";
         if (rowName !== "") userAliases.add(rowName);
         if (rowEmail !== "") userAliases.add(rowEmail);
+        if (rowUser !== "") userAliases.add(rowUser);
       });
     }
 
@@ -1149,91 +1135,121 @@ async function handleGetLotInfo(lotNo: string) {
   return { status: "error", message: "Lot not found" };
 }
 
-async function handleGetUserProfile(user: string) {
+let cachedEmployeeList: any[] | null = null;
+let lastEmployeeListFetch = 0;
+const EMPLOYEE_LIST_CACHE_MS = 15 * 1000; // 15 seconds cache to reflect updates almost instantly
+
+async function getEmployeeList(): Promise<any[]> {
+  const now = Date.now();
+  if (cachedEmployeeList && (now - lastEmployeeListFetch < EMPLOYEE_LIST_CACHE_MS)) {
+    return cachedEmployeeList;
+  }
+
+  if (!isDirectConfigured && isAppsScriptAvailable) {
+    try {
+      const resp = await proxyToAppsScript("GET", "getEmployees", {}, {});
+      if (resp && resp.status === "success" && Array.isArray(resp.data)) {
+        cacheAppsScriptResponse("getEmployees", resp);
+        const list = resp.data.map((emp: any) => ({
+          ...emp,
+          user: emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "")
+        }));
+        cachedEmployeeList = list;
+        lastEmployeeListFetch = now;
+        return list;
+      }
+    } catch (err) {
+      console.log("[Error] Failed to fetch employees via Apps Script proxy, falling back to local DB:", err);
+    }
+  }
+
   const data = await getSheetValues("employee");
-  if (!data || data.length <= 1)
+  if (!data || data.length <= 1) return [];
+  const headers = data[0];
+  const emailIdx = headers.findIndex((h: any) => /email/i.test(String(h).trim()));
+  const userIdx = headers.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
+  const idx = {
+    name: headers.findIndex((h: any) => /nama|name|pic/i.test(String(h).trim())),
+    email: emailIdx !== -1 ? emailIdx : headers.findIndex((h: any) => /email|user/i.test(String(h).trim())),
+    username: userIdx !== -1 ? userIdx : -1,
+    pos: headers.findIndex((h: any) => /position|jabatan/i.test(String(h).trim())),
+    prov: headers.findIndex((h: any) => /province|provinsi/i.test(String(h).trim())),
+    area: headers.findIndex((h: any) => /area/i.test(String(h).trim())),
+    upline: headers.findIndex((h: any) => /upline|spv|supervisor|atasan|manager/i.test(String(h).trim())),
+    password: headers.findIndex((h: any) => /password|pass/i.test(String(h).trim())),
+    level: headers.findIndex((h: any) => /level|grade/i.test(String(h).trim())),
+    group: headers.findIndex((h: any) => /group|tim|divisi|division/i.test(String(h).trim())),
+  };
+
+  const list = data.slice(1).map((row) => {
+    const p = idx.pos !== -1 ? row[idx.pos] : "Business Solution";
+    return {
+      name: idx.name !== -1 ? String(row[idx.name] || "").trim() : "",
+      email: idx.email !== -1 ? String(row[idx.email] || "").trim() : "",
+      user: idx.username !== -1 ? String(row[idx.username] || "").trim() : "",
+      position: normalizePosition(p),
+      province: idx.prov !== -1 ? String(row[idx.prov] || "").trim() : "-",
+      area: idx.area !== -1 ? String(row[idx.area] || "").trim() : "-",
+      upline: idx.upline !== -1 ? String(row[idx.upline] || "").trim() : "",
+      password: idx.password !== -1 ? String(row[idx.password] || "").trim() : "",
+      level: idx.level !== -1 && row[idx.level] !== "" && row[idx.level] !== undefined ? row[idx.level] : null,
+      group: idx.group !== -1 ? String(row[idx.group] || "").trim() : "",
+    };
+  });
+
+  cachedEmployeeList = list;
+  lastEmployeeListFetch = now;
+  return list;
+}
+
+async function handleGetUserProfile(user: string) {
+  const employees = await getEmployeeList();
+  if (employees.length === 0) {
     return {
       status: "error",
       message: "Data employee kosong atau tidak ditemukan",
     };
-  const headers = data[0];
-  const idx = {
-    name: headers.findIndex((h: any) =>
-      /nama|name|pic/i.test(String(h).trim()),
-    ),
-    email: headers.findIndex((h: any) => /email|user/i.test(String(h).trim())),
-    pos: headers.findIndex((h: any) =>
-      /position|jabatan/i.test(String(h).trim()),
-    ),
-    prov: headers.findIndex((h: any) =>
-      /province|provinsi/i.test(String(h).trim()),
-    ),
-    area: headers.findIndex((h: any) => /area/i.test(String(h).trim())),
-    upline: headers.findIndex((h: any) =>
-      /upline|spv|supervisor|atasan|manager/i.test(String(h).trim()),
-    ),
-    password: headers.findIndex((h: any) =>
-      /password|pass/i.test(String(h).trim()),
-    ),
-    level: headers.findIndex((h: any) => /level|grade/i.test(String(h).trim())),
-    group: headers.findIndex((h: any) =>
-      /group|tim|divisi|division/i.test(String(h).trim()),
-    ),
-  };
-  if (idx.name === -1)
-    return { status: "error", message: "Kolom nama tidak ditemukan" };
+  }
 
   const lowerUser = String(user).trim().toLowerCase();
-  const userAliases = new Set([lowerUser]);
 
-  let foundUserRow: any = null;
-  data.slice(1).forEach((row) => {
-    const rowName =
-      idx.name !== -1
-        ? String(row[idx.name] || "")
-            .trim()
-            .toLowerCase()
-        : "";
-    const rowEmail =
-      idx.email !== -1
-        ? String(row[idx.email] || "")
-            .trim()
-            .toLowerCase()
-        : "";
-    if (rowName === lowerUser || rowEmail === lowerUser) {
-      foundUserRow = row;
-      if (rowName !== "") userAliases.add(rowName);
-      if (rowEmail !== "") userAliases.add(rowEmail);
+  // Strict matching: username MUST match the 'user' column, the 'email' column, or the local part of the 'email' column (strictly excluding 'name' column)
+  const foundEmployee = employees.find((emp) => {
+    const rowUser = String(emp.user || "").trim().toLowerCase();
+    const rowEmail = String(emp.email || "").trim().toLowerCase();
+    const rowUserLocal = rowEmail.includes("@") ? rowEmail.split("@")[0] : rowEmail;
+
+    if (rowUser !== "") {
+      return rowUser === lowerUser || rowEmail === lowerUser;
+    } else {
+      return rowUserLocal === lowerUser || rowEmail === lowerUser;
     }
   });
 
-  if (!foundUserRow) {
+  if (!foundEmployee) {
     return { status: "error", message: "Username tidak ditemukan" };
   }
 
-  const passwordVal =
-    idx.password !== -1 && foundUserRow[idx.password] !== undefined
-      ? String(foundUserRow[idx.password]).trim()
-      : "";
+  const resolvedUser = foundEmployee.user || (foundEmployee.email ? (foundEmployee.email.includes("@") ? foundEmployee.email.split("@")[0] : foundEmployee.email) : "");
+
   const profile: any = {
-    name: idx.name !== -1 ? String(foundUserRow[idx.name] || "").trim() : user,
-    position: normalizePosition(
-      idx.pos !== -1 ? foundUserRow[idx.pos] : "Business Solution",
-    ),
-    province: idx.prov !== -1 ? foundUserRow[idx.prov] : "-",
-    area: idx.area !== -1 ? foundUserRow[idx.area] : "-",
-    password: passwordVal,
-    upline:
-      idx.upline !== -1 ? String(foundUserRow[idx.upline] || "").trim() : "",
-    level:
-      idx.level !== -1 &&
-      foundUserRow[idx.level] !== "" &&
-      foundUserRow[idx.level] !== undefined
-        ? foundUserRow[idx.level]
-        : null,
-    group: idx.group !== -1 ? String(foundUserRow[idx.group] || "").trim() : "",
+    name: foundEmployee.name,
+    email: foundEmployee.email,
+    user: resolvedUser,
+    position: foundEmployee.position,
+    province: foundEmployee.province,
+    area: foundEmployee.area,
+    password: foundEmployee.password,
+    upline: foundEmployee.upline,
+    level: foundEmployee.level,
+    group: foundEmployee.group,
     subordinates: [],
   };
+
+  const userAliases = new Set([lowerUser]);
+  if (profile.name !== "") userAliases.add(profile.name.toLowerCase());
+  if (profile.email !== "") userAliases.add(profile.email.toLowerCase());
+  if (profile.user !== "") userAliases.add(profile.user.toLowerCase());
 
   const isBusinessAnalyst =
     lowerUser === "adityawiratama" ||
@@ -1245,14 +1261,10 @@ async function handleGetUserProfile(user: string) {
   if (isBusinessAnalyst) {
     profile.position = "Business Analyst";
     const asmSubordinates: string[] = [];
-    data.slice(1).forEach((row) => {
-      const empNameRaw =
-        idx.name !== -1 ? String(row[idx.name] || "").trim() : "";
-      const empPosRaw = idx.pos !== -1 ? String(row[idx.pos] || "").trim() : "";
-      const empPosNorm = normalizePosition(empPosRaw);
-      if (empNameRaw !== "" && empPosNorm === "Area Sales Manager") {
-        if (!asmSubordinates.includes(empNameRaw)) {
-          asmSubordinates.push(empNameRaw);
+    employees.forEach((emp) => {
+      if (emp.name !== "" && emp.position === "Area Sales Manager") {
+        if (!asmSubordinates.includes(emp.name)) {
+          asmSubordinates.push(emp.name);
         }
       }
     });
@@ -1266,15 +1278,12 @@ async function handleGetUserProfile(user: string) {
 
   while (queue.length > 0) {
     const currentUpline = queue.shift();
-    data.slice(1).forEach((row) => {
-      const empNameRaw =
-        idx.name !== -1 ? String(row[idx.name] || "").trim() : "";
+    employees.forEach((emp) => {
+      const empNameRaw = String(emp.name || "").trim();
       const empNameLower = empNameRaw.toLowerCase();
-      const empEmailRaw =
-        idx.email !== -1 ? String(row[idx.email] || "").trim() : "";
+      const empEmailRaw = String(emp.email || "").trim();
       const empEmailLower = empEmailRaw.toLowerCase();
-      const empUplineRaw =
-        idx.upline !== -1 ? String(row[idx.upline] || "").trim() : "";
+      const empUplineRaw = String(emp.upline || "").trim();
       const empUplineLower = empUplineRaw.toLowerCase();
 
       if (empUplineLower !== "") {
@@ -1313,11 +1322,14 @@ async function handleGetEmployees() {
   const data = await getSheetValues("employee");
   if (!data || data.length <= 1) return { status: "success", data: [] };
   const headers = data[0];
+  const emailIdx = headers.findIndex((h: any) => /email/i.test(String(h).trim()));
+  const userIdx = headers.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
   const idx = {
     name: headers.findIndex((h: any) =>
       /nama|name|pic/i.test(String(h).trim()),
     ),
-    email: headers.findIndex((h: any) => /email|user/i.test(String(h).trim())),
+    email: emailIdx !== -1 ? emailIdx : headers.findIndex((h: any) => /email|user/i.test(String(h).trim())),
+    username: userIdx !== -1 ? userIdx : -1,
     pos: headers.findIndex((h: any) =>
       /position|jabatan/i.test(String(h).trim()),
     ),
@@ -1345,6 +1357,7 @@ async function handleGetEmployees() {
       return {
         name: idx.name !== -1 ? String(row[idx.name] || "").trim() : "",
         email: idx.email !== -1 ? String(row[idx.email] || "").trim() : "",
+        user: idx.username !== -1 ? String(row[idx.username] || "").trim() : "",
         position: normalizePosition(p),
         province: idx.prov !== -1 ? String(row[idx.prov] || "").trim() : "-",
         area: idx.area !== -1 ? String(row[idx.area] || "").trim() : "-",
@@ -2114,9 +2127,12 @@ async function handleUpdateEmployee(body: any) {
   const headers = data[0];
   const getIdx = (patterns: RegExp) =>
     headers.findIndex((h) => patterns.test(String(h).trim()));
+  const emailIdx = headers.findIndex((h: any) => /email/i.test(String(h).trim()));
+  const userIdx = headers.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
   const idx = {
     name: getIdx(/nama|name|pic/i),
-    email: getIdx(/email|user/i),
+    email: emailIdx !== -1 ? emailIdx : getIdx(/email|user/i),
+    username: userIdx !== -1 ? userIdx : -1,
     pos: getIdx(/position|jabatan/i),
     prov: getIdx(/province|provinsi/i),
     area: getIdx(/area/i),
@@ -2142,8 +2158,11 @@ async function handleUpdateEmployee(body: any) {
   if (targetRow !== -1) {
     const rowIndex = targetRow - 1;
     if (body.name !== undefined) data[rowIndex][idx.name] = body.name;
-    if (idx.email !== -1 && body.email !== undefined)
+    if (idx.username !== -1 && body.user !== undefined) {
+      data[rowIndex][idx.username] = body.user;
+    } else if (idx.email !== -1 && body.email !== undefined) {
       data[rowIndex][idx.email] = body.email;
+    }
     if (idx.pos !== -1 && body.position !== undefined)
       data[rowIndex][idx.pos] = body.position;
     if (idx.prov !== -1 && body.province !== undefined)
@@ -2163,8 +2182,11 @@ async function handleUpdateEmployee(body: any) {
     const newRow = new Array(headers.length).fill("");
     if (idx.name !== -1 && body.name !== undefined)
       newRow[idx.name] = body.name;
-    if (idx.email !== -1 && body.email !== undefined)
+    if (idx.username !== -1 && body.user !== undefined) {
+      newRow[idx.username] = body.user;
+    } else if (idx.email !== -1 && body.email !== undefined) {
       newRow[idx.email] = body.email;
+    }
     if (idx.pos !== -1 && body.position !== undefined)
       newRow[idx.pos] = body.position;
     if (idx.prov !== -1 && body.province !== undefined)
@@ -2181,6 +2203,7 @@ async function handleUpdateEmployee(body: any) {
       newRow[idx.group] = body.group;
     await appendSheetRow("employee", newRow);
   }
+  cachedEmployeeList = null;
   return { status: "success" };
 }
 
@@ -2208,6 +2231,7 @@ async function handleDeleteEmployee(body: any) {
   } else {
     throw new Error("Employee not found with name: " + body.name);
   }
+  cachedEmployeeList = null;
   return { status: "success" };
 }
 
@@ -2343,6 +2367,140 @@ async function handleSaveAccessRules(body: any) {
 
 let isAppsScriptAvailable = true;
 
+function cacheAppsScriptResponse(action: string, response: any) {
+  if (!response || response.status !== "success" || !response.data) return;
+
+  try {
+    initLocalDb();
+    const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
+    let updated = false;
+
+    if (action === "getEmployees" && Array.isArray(response.data)) {
+      const rows: any[][] = [
+        ["Nama", "Email", "User", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"]
+      ];
+      response.data.forEach((emp: any) => {
+        const resolvedUser = emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "");
+        rows.push([
+          emp.name || "",
+          emp.email || "",
+          resolvedUser || "",
+          emp.position || "",
+          emp.province || "",
+          emp.area || "",
+          emp.upline || "",
+          emp.password || "",
+          emp.level !== null && emp.level !== undefined ? String(emp.level) : "",
+          emp.group || ""
+        ]);
+      });
+      db["employee"] = rows;
+      updated = true;
+    } else if (action === "getAccessRules" && typeof response.data === "object") {
+      const rows: any[][] = [
+        ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]
+      ];
+      Object.keys(response.data).forEach((pos) => {
+        const rule = response.data[pos];
+        rows.push([
+          pos,
+          rule.home ? "TRUE" : "FALSE",
+          rule.partner ? "TRUE" : "FALSE",
+          rule.stock ? "TRUE" : "FALSE",
+          rule.pog ? "TRUE" : "FALSE",
+          rule.overview ? "TRUE" : "FALSE",
+          rule.temp ? "TRUE" : "FALSE",
+          rule.access ? "TRUE" : "FALSE"
+        ]);
+      });
+      db["access"] = rows;
+      updated = true;
+    } else if (action === "getChannels" && Array.isArray(response.data)) {
+      const rows: any[][] = [
+        ["Name", "PIC", "Category", "Province", "Area"]
+      ];
+      response.data.forEach((ch: any) => {
+        rows.push([
+          ch.name || "",
+          ch.pic || "",
+          ch.category || "",
+          ch.province || "",
+          ch.area || ""
+        ]);
+      });
+      db["channel"] = rows;
+      updated = true;
+    } else if (action === "getInitialData" && response.data) {
+      const data = response.data;
+      if (Array.isArray(data.employees)) {
+        const rows: any[][] = [
+          ["Nama", "Email", "User", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"]
+        ];
+        data.employees.forEach((emp: any) => {
+          const resolvedUser = emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "");
+          rows.push([
+            emp.name || "",
+            emp.email || "",
+            resolvedUser || "",
+            emp.position || "",
+            emp.province || "",
+            emp.area || "",
+            emp.upline || "",
+            emp.password || "",
+            emp.level !== null && emp.level !== undefined ? String(emp.level) : "",
+            emp.group || ""
+          ]);
+        });
+        db["employee"] = rows;
+        updated = true;
+      }
+      if (data.accessRules && typeof data.accessRules === "object") {
+        const rows: any[][] = [
+          ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]
+        ];
+        Object.keys(data.accessRules).forEach((pos) => {
+          const rule = data.accessRules[pos];
+          rows.push([
+            pos,
+            rule.home ? "TRUE" : "FALSE",
+            rule.partner ? "TRUE" : "FALSE",
+            rule.stock ? "TRUE" : "FALSE",
+            rule.pog ? "TRUE" : "FALSE",
+            rule.overview ? "TRUE" : "FALSE",
+            rule.temp ? "TRUE" : "FALSE",
+            rule.access ? "TRUE" : "FALSE"
+          ]);
+        });
+          db["access"] = rows;
+        updated = true;
+      }
+      if (Array.isArray(data.channels)) {
+        const rows: any[][] = [
+          ["Name", "PIC", "Category", "Province", "Area"]
+        ];
+        data.channels.forEach((ch: any) => {
+          rows.push([
+            ch.name || "",
+            ch.pic || "",
+            ch.category || "",
+            ch.province || "",
+            ch.area || ""
+          ]);
+        });
+        db["channel"] = rows;
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
+      console.log(`[Cache] Successfully updated local cache for action: ${action}`);
+    }
+  } catch (err) {
+    console.warn(`[Cache Error] Failed to cache response for action ${action}:`, err);
+  }
+}
+
 // Fallback Apps Script proxy fetcher
 async function proxyToAppsScript(
   method: string,
@@ -2400,7 +2558,7 @@ app.all("/api", async (req, res) => {
     `[API Call] Method: ${req.method}, Action: ${action}, User: ${user}`,
   );
 
-  if (!isDirectConfigured && isAppsScriptAvailable) {
+  if (!isDirectConfigured && isAppsScriptAvailable && action !== "getUserProfile") {
     try {
       const data = await proxyToAppsScript(
         req.method,
@@ -2408,12 +2566,14 @@ app.all("/api", async (req, res) => {
         req.body,
         req.query,
       );
+      if (data && data.status === "success") {
+        cacheAppsScriptResponse(action, data);
+      }
       return res.json(data);
     } catch (err: any) {
       console.log(
-        `[Proxy Notice] Apps Script is unconfigured or offline. Automatically switching to local database.`
+        `[Proxy Notice] Apps Script proxy error for action ${action}, using local database as fallback. Error:`, err
       );
-      isAppsScriptAvailable = false;
     }
   }
 
