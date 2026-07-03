@@ -1755,17 +1755,23 @@ const Dashboard = ({
     setIsSavingAccess(true);
     const filteredRules: Record<string, Record<string, boolean>> = {};
     allPositionsList.forEach(pos => {
+      const isBA = pos === "Business Analyst";
       if (accessRules[pos]) {
-        filteredRules[pos] = accessRules[pos];
+        filteredRules[pos] = {
+          ...accessRules[pos],
+          overview: isBA && accessRules[pos].overview,
+          temp: isBA && accessRules[pos].temp,
+          access: isBA && accessRules[pos].access
+        };
       } else {
         filteredRules[pos] = {
           home: true,
           partner: true,
           stock: true,
           pog: true,
-          overview: pos === "Business Analyst" || pos === "Sales Manager" || pos === "Area Sales Manager",
-          temp: pos === "Business Analyst" || pos === "Sales Manager",
-          access: pos === "Business Analyst"
+          overview: isBA,
+          temp: isBA,
+          access: isBA
         };
       }
     });
@@ -1810,6 +1816,9 @@ const Dashboard = ({
   }, []);
 
   const toggleAccessRule = (position: string, page: string) => {
+    if (position !== "Business Analyst" && (page === "overview" || page === "temp" || page === "access")) {
+      return;
+    }
     setAccessRules((prev: Record<string, Record<string, boolean>>) => {
       const currentRules = prev[position] || {
         home: true,
@@ -1831,14 +1840,18 @@ const Dashboard = ({
   };
 
   const renderAccessCheckbox = (position: string, page: string) => {
-    const isChecked = accessRules[position]?.[page] ?? (page === 'overview' || page === 'temp' || page === 'access' ? false : true);
+    const isLockedDisabled = position !== "Business Analyst" && (page === "overview" || page === "temp" || page === "access");
+    const isChecked = isLockedDisabled ? false : (accessRules[position]?.[page] ?? (page === 'overview' || page === 'temp' || page === 'access' ? false : true));
     return (
       <button 
-        onClick={() => toggleAccessRule(position, page)}
+        onClick={() => !isLockedDisabled && toggleAccessRule(position, page)}
+        disabled={isLockedDisabled}
         className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border uppercase tracking-wide transition-colors ${
-          isChecked 
-            ? "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100" 
-            : "text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100"
+          isLockedDisabled
+            ? "text-slate-300 bg-slate-100/50 border-slate-100 cursor-not-allowed"
+            : isChecked 
+              ? "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 cursor-pointer" 
+              : "text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 cursor-pointer"
         }`}
       >
         <span className="material-symbols-outlined text-[12px]">
@@ -2811,6 +2824,11 @@ const Dashboard = ({
           // 4. Access Rules
           if (res.data.accessRules && Object.keys(res.data.accessRules).length > 0) {
             setAccessRules(res.data.accessRules);
+            try {
+              localStorage.setItem('appAccessRules', JSON.stringify(res.data.accessRules));
+            } catch (e) {
+              console.error('Failed to save appAccessRules to localStorage', e);
+            }
           }
         } else {
           console.warn(
@@ -2903,6 +2921,11 @@ const Dashboard = ({
 
         if (resAccess.status === "success" && resAccess.data && Object.keys(resAccess.data).length > 0) {
           setAccessRules(resAccess.data);
+          try {
+            localStorage.setItem('appAccessRules', JSON.stringify(resAccess.data));
+          } catch (e) {
+            console.error('Failed to save appAccessRules to localStorage', e);
+          }
         }
       } catch (fallbackErr) {
         console.warn("Fallback live fetches also failed:", fallbackErr);
@@ -11918,7 +11941,7 @@ export default function App() {
   }, [userData]);
 
   const userPosition = useMemo(() => {
-    return userData ? String(userData.position || "").trim() : "";
+    return userData ? normalizePosition(userData.position) : "";
   }, [userData]);
 
   const [accessRules, setAccessRules] = useState<Record<string, Record<string, boolean>>>(() => {
@@ -11930,8 +11953,8 @@ export default function App() {
     }
     return {
       "Business Analyst": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
-      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
-      "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: false, access: false },
+      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Sales Agronomist": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Business Solution": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
     };
@@ -11942,8 +11965,8 @@ export default function App() {
     partner: true,
     stock: true,
     pog: true,
-    overview: userPosition === "Business Analyst" || userPosition === "Sales Manager" || userPosition === "Area Sales Manager",
-    temp: userPosition === "Business Analyst" || userPosition === "Sales Manager",
+    overview: userPosition === "Business Analyst",
+    temp: userPosition === "Business Analyst",
     access: userPosition === "Business Analyst"
   };
 
@@ -11951,9 +11974,9 @@ export default function App() {
   const showPartnerTab = userData ? userAccess.partner : false;
   const showStockTab = userData ? userAccess.stock : false;
   const showPogTab = userData ? userAccess.pog : false;
-  const showOverviewTab = userData ? userAccess.overview : false;
-  const showTempTab = isAditya || (userData ? userAccess.temp : false);
-  const showAccessTab = isAditya || (userData ? userAccess.access : false);
+  const showOverviewTab = userData ? (isBusinessAnalyst && userAccess.overview) : false;
+  const showTempTab = userData ? (isBusinessAnalyst && userAccess.temp) : false;
+  const showAccessTab = userData ? (isBusinessAnalyst && userAccess.access) : false;
 
   // Eager redirection on render to avoid layout flashing and guarantee seamless first login redirection
   if (userData) {

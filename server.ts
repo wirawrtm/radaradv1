@@ -1366,19 +1366,21 @@ async function handleGetEmployees() {
 
 async function handleGetInitialData(user: string) {
   try {
-    // Fetch user profile, employees, channels, working data, and sales data in parallel
+    // Fetch user profile, employees, channels, working data, sales data, and access rules in parallel
     const [
       profileJson,
       employeesJson,
       channelsJson,
       workingDataJson,
       drSalesDataJson,
+      accessRulesJson,
     ] = await Promise.all([
       handleGetUserProfile(user),
       handleGetEmployees(),
       handleGetChannels(user),
       handleGetWorkingData(user),
       handleGetDrSalesData(user),
+      handleGetAccessRules(),
     ]);
 
     return {
@@ -1391,6 +1393,8 @@ async function handleGetInitialData(user: string) {
           workingDataJson.status === "success" ? workingDataJson.data : [],
         drSalesData:
           drSalesDataJson.status === "success" ? drSalesDataJson.data : [],
+        accessRules:
+          accessRulesJson.status === "success" ? accessRulesJson.data : {},
       },
     };
   } catch (error: any) {
@@ -2248,14 +2252,15 @@ async function handleGetAccessRules() {
         const position = String(row[0]).trim();
         if (!position) continue;
         existingPositions.push(position);
+        const isBA = position === "Business Analyst";
         rules[position] = {
           home: row[1] === true || String(row[1]).toUpperCase() === "TRUE",
           partner: row[2] === true || String(row[2]).toUpperCase() === "TRUE",
           stock: row[3] === true || String(row[3]).toUpperCase() === "TRUE",
           pog: row[4] === true || String(row[4]).toUpperCase() === "TRUE",
-          overview: row[5] === true || String(row[5]).toUpperCase() === "TRUE",
-          temp: row[6] === true || String(row[6]).toUpperCase() === "TRUE",
-          access: row[7] === true || String(row[7]).toUpperCase() === "TRUE",
+          overview: isBA && (row[5] === true || String(row[5]).toUpperCase() === "TRUE"),
+          temp: isBA && (row[6] === true || String(row[6]).toUpperCase() === "TRUE"),
+          access: isBA && (row[7] === true || String(row[7]).toUpperCase() === "TRUE"),
         };
       }
     }
@@ -2275,11 +2280,6 @@ async function handleGetAccessRules() {
           overview = "TRUE";
           temp = "TRUE";
           access = "TRUE";
-        } else if (p === "Sales Manager") {
-          overview = "TRUE";
-          temp = "TRUE";
-        } else if (p === "Area Sales Manager") {
-          overview = "TRUE";
         }
 
         const newRow = [p, home, partner, stock, pog, overview, temp, access];
@@ -2321,15 +2321,16 @@ async function handleSaveAccessRules(body: any) {
     for (const position in rules) {
       if (!VALID_POSITIONS.includes(position)) continue; // Filter out VP, National Head, etc.
       const rule = rules[position];
+      const isBA = position === "Business Analyst";
       rows.push([
         position,
         rule.home ? "TRUE" : "FALSE",
         rule.partner ? "TRUE" : "FALSE",
         rule.stock ? "TRUE" : "FALSE",
         rule.pog ? "TRUE" : "FALSE",
-        rule.overview ? "TRUE" : "FALSE",
-        rule.temp ? "TRUE" : "FALSE",
-        rule.access ? "TRUE" : "FALSE",
+        isBA && rule.overview ? "TRUE" : "FALSE",
+        isBA && rule.temp ? "TRUE" : "FALSE",
+        isBA && rule.access ? "TRUE" : "FALSE",
       ]);
     }
 
