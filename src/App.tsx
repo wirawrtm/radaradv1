@@ -1047,7 +1047,13 @@ const EmployeeEditModal = ({
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
-    const levelVal = getPositionRank(position);
+    const rank = getPositionRank(position);
+    let levelVal = 0;
+    if (rank === 1) levelVal = 5;
+    else if (rank === 2) levelVal = 4;
+    else if (rank === 3) levelVal = 3;
+    else if (rank === 4) levelVal = 2;
+    else if (rank === 5) levelVal = 1;
     onSave(
       isAdd ? "" : item?.name || "",
       {
@@ -9496,38 +9502,27 @@ const Dashboard = ({
                 if (directSubordinates.length === 0) return null;
 
                 return (
-                  <div className="space-y-4">
+                  <div className="space-y-4 pl-3 border-l border-[#edecff]/70 ml-1.5 mt-2 animate-in fade-in duration-300">
                     {directSubordinates.map((sub, idx) => {
                       const subPos =
                         getFromRecord<string>(teamPositions, sub) ||
                         "Sales Agronomist";
                       const subProvince =
                         getFromRecord<string>(teamProvinces, sub) || "-";
-                      const isCollapsed = collapsedNodes[sub];
+                      const isCollapsed = collapsedNodes[sub] !== false;
                       const subSubs = getDirectSubordinates(sub);
-                      const hasChildren = subSubs.length > 0;
-
-                      const bgBadge =
-                        depth === 1
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/15"
-                          : depth === 2
-                            ? "bg-blue-500/10 text-blue-600 border-blue-500/15"
-                            : "bg-purple-500/10 text-purple-600 border-purple-500/15";
+                      // Only allow expanding one level of subordinate under the root user (depth < 1)
+                      const hasChildren = depth < 1 && subSubs.length > 0;
 
                       return (
                         <div key={idx} className="space-y-4">
-                          <div className="flex items-start gap-3">
-                            <span
-                              className={`size-7 rounded-full flex items-center justify-center font-bold shrink-0 border mt-1.5 shadow-sm text-[10px] ${bgBadge}`}
-                            >
-                              {depth}
-                            </span>
+                          <div className="flex items-start">
                             <div
                               onClick={() => {
                                 if (hasChildren) {
                                   setCollapsedNodes((prev) => ({
                                     ...prev,
-                                    [sub]: !prev[sub],
+                                    [sub]: prev[sub] === false,
                                   }));
                                 }
                               }}
@@ -9670,7 +9665,7 @@ const Dashboard = ({
                             onClick={() => {
                               setCollapsedNodes((prev) => ({
                                 ...prev,
-                                [userData.name]: !prev[userData.name],
+                                [userData.name]: prev[userData.name] === false,
                               }));
                             }}
                             className={`bg-gradient-to-r from-[#edecff] to-sky-50/50 px-4 py-2.5 rounded-[18px] flex-1 relative overflow-hidden group shadow-[0_8px_24px_rgba(21,75,226,0.08)] hover:shadow-[0_12px_30px_rgba(21,75,226,0.14)] border-0 transition-all flex items-center justify-between ${rootSubordinates.length > 0 ? "cursor-pointer" : "cursor-default"}`}
@@ -9744,7 +9739,7 @@ const Dashboard = ({
                               </button>
                               {rootSubordinates.length > 0 && (
                                 <span className="material-symbols-outlined text-[#8E94B7] text-md leading-none select-none ml-1">
-                                  {collapsedNodes[userData.name]
+                                  {collapsedNodes[userData.name] !== false
                                     ? "expand_more"
                                     : "expand_less"}
                                 </span>
@@ -9754,7 +9749,7 @@ const Dashboard = ({
                         </div>
 
                         {/* Recursive Tree Render */}
-                        {!collapsedNodes[userData.name] &&
+                        {collapsedNodes[userData.name] === false &&
                           renderRecursiveTeamNode(userData.name, 1)}
                       </div>
                     ) : (
@@ -11715,10 +11710,10 @@ const LoginScreen = ({ onLogin }) => {
           <AdvantaLogo className="w-[64px] h-[64px] text-white" />
         </div>
         <h1 className="text-xl font-bold text-center text-[#181a2c] tracking-tight mb-1 uppercase">
-          ADVANTA CHANNEL PARTNER
+          RADAR ADVANTA
         </h1>
-        <p className="text-[11px] text-center text-[#8E94B7] font-semibold uppercase tracking-widest mb-6">
-          Inventory & POG Workspace
+        <p className="text-[10px] text-center text-[#8E94B7] font-semibold uppercase tracking-widest mb-6 leading-relaxed">
+          REKAN ADVANTA DAN ANALISA REPORT
         </p>
 
         <div className="space-y-4">
@@ -11735,7 +11730,7 @@ const LoginScreen = ({ onLogin }) => {
           <div className="space-y-4">
             <div>
               <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
-                Username / PIC Name
+                username
               </label>
               <input
                 type="text"
@@ -11743,7 +11738,7 @@ const LoginScreen = ({ onLogin }) => {
                 onChange={(e) => setName(e.target.value)}
                 disabled={loading}
                 className="w-full h-14 bg-white/80 border-0 rounded-full px-6 font-semibold text-sm text-[#181a2c] outline-none focus:bg-white transition-all shadow-[0_4px_18px_rgba(21,75,226,0.08)] focus:shadow-[0_8px_28px_rgba(21,75,226,0.18)] mb-4 disabled:opacity-50"
-                placeholder="Enter your name..."
+                placeholder="Enter username..."
               />
               <label className="text-[11px] font-bold text-[#8E94B7] uppercase tracking-wider ml-4 mb-2 block">
                 Password

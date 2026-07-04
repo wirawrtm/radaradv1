@@ -1160,6 +1160,7 @@ async function getEmployeeList(): Promise<any[]> {
       }
     } catch (err) {
       console.log("[Error] Failed to fetch employees via Apps Script proxy, falling back to local DB:", err);
+      isAppsScriptAvailable = false; // Disable to make future requests instantaneous
     }
   }
 
@@ -2534,17 +2535,31 @@ async function proxyToAppsScript(
   console.log(
     `[Proxy] Routing ${method} request for action: ${action || payload.action} to Apps Script`,
   );
-  const response = await fetch(fetchUrl.toString(), fetchOptions);
-  const text = await response.text();
   try {
-    return JSON.parse(text);
-  } catch (err: any) {
-    console.log(
-      `[Proxy Notice] Received non-JSON response from Apps Script (Status: ${response.status}). Apps Script might be unconfigured or offline.`
-    );
-    throw new Error(
-      `Apps Script returned invalid JSON (Status: ${response.status}, Length: ${text.length}).`
-    );
+    const response = await fetch(fetchUrl.toString(), fetchOptions);
+    if (!response.ok) {
+      console.log(
+        `[Proxy Notice] Apps Script returned non-OK status (${response.status}). Disabling Apps Script proxy.`
+      );
+      isAppsScriptAvailable = false;
+      throw new Error(`Apps Script responded with status ${response.status}`);
+    }
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch (err: any) {
+      console.log(
+        `[Proxy Notice] Received non-JSON response from Apps Script (Status: ${response.status}). Disabling Apps Script proxy.`
+      );
+      isAppsScriptAvailable = false;
+      throw new Error(
+        `Apps Script returned invalid JSON (Status: ${response.status}, Length: ${text.length}).`
+      );
+    }
+  } catch (e: any) {
+    console.log(`[Proxy Error] Apps Script proxy request failed. Disabling proxy:`, e.message || e);
+    isAppsScriptAvailable = false;
+    throw e;
   }
 }
 
@@ -2574,6 +2589,7 @@ app.all("/api", async (req, res) => {
       console.log(
         `[Proxy Notice] Apps Script proxy error for action ${action}, using local database as fallback. Error:`, err
       );
+      isAppsScriptAvailable = false;
     }
   }
 
