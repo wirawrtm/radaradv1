@@ -9511,8 +9511,7 @@ const Dashboard = ({
                         getFromRecord<string>(teamProvinces, sub) || "-";
                       const isCollapsed = collapsedNodes[sub] !== false;
                       const subSubs = getDirectSubordinates(sub);
-                      // Only allow expanding one level of subordinate under the root user (depth < 1)
-                      const hasChildren = depth < 1 && subSubs.length > 0;
+                      const hasChildren = subSubs.length > 0;
 
                       return (
                         <div key={idx} className="space-y-4">
