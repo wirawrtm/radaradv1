@@ -56,6 +56,48 @@ function initLocalDb() {
   fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(defaultDb, null, 2), "utf8");
 }
 
+// Helpers for Jakarta (WIB) Timezone (UTC+7)
+function getJakartaParts(): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+} {
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  };
+  const formatter = new Intl.DateTimeFormat("en-US", options);
+  const parts = formatter.formatToParts(now);
+  const partMap = parts.reduce((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {} as Record<string, string>);
+
+  return {
+    year: parseInt(partMap.year, 10),
+    month: parseInt(partMap.month, 10),
+    day: parseInt(partMap.day, 10),
+    hour: parseInt(partMap.hour, 10),
+    minute: parseInt(partMap.minute, 10),
+    second: parseInt(partMap.second, 10)
+  };
+}
+
+function getJakartaDate(): Date {
+  const parts = getJakartaParts();
+  return new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+}
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.text({ type: "text/plain", limit: "50mb" }));
 app.use((req, res, next) => {
@@ -66,10 +108,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// Constants
-const ORIGINAL_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbxUUPKhsEo-LencnYjex3gOhVl7w2tS154VCICVbqGfFSBLAwzv0P7XOu9oMTE1jTUg1g/exec";
 
 // Google Sheets API Helpers
 const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
@@ -402,11 +440,22 @@ async function updateSheetValues(
   sheetName: string,
   values: any[][],
 ): Promise<boolean> {
+  const sanitizedValues = (values || []).map(row => {
+    if (!Array.isArray(row)) return [];
+    const len = row.length;
+    const sanitizedRow = [];
+    for (let i = 0; i < len; i++) {
+      const val = row[i];
+      sanitizedRow.push(val === undefined || val === null ? "" : val);
+    }
+    return sanitizedRow;
+  });
+
   if (!isDirectConfigured) {
     initLocalDb();
     try {
       const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
-      db[sheetName] = values;
+      db[sheetName] = sanitizedValues;
       fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
       return true;
     } catch (e) {
@@ -428,7 +477,7 @@ async function updateSheetValues(
       spreadsheetId,
       range: `${sheetName}!A1`,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values },
+      requestBody: { values: sanitizedValues },
     });
     return true;
   } catch (e) {
@@ -442,12 +491,14 @@ async function appendSheetRow(
   sheetName: string,
   rowValues: any[],
 ): Promise<boolean> {
+  const sanitizedRow = (rowValues || []).map(cell => (cell === undefined || cell === null ? "" : cell));
+
   if (!isDirectConfigured) {
     initLocalDb();
     try {
       const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
       if (!db[sheetName]) db[sheetName] = [];
-      db[sheetName].push(rowValues);
+      db[sheetName].push(sanitizedRow);
       fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
       return true;
     } catch (e) {
@@ -464,7 +515,7 @@ async function appendSheetRow(
       spreadsheetId,
       range: `${sheetName}!A1`,
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [rowValues] },
+      requestBody: { values: [sanitizedRow] },
     });
     return true;
   } catch (e) {
@@ -1101,7 +1152,7 @@ async function handleGetLotInfo(lotNo: string) {
     }
   };
 
-  const todayDate = new Date();
+  const todayDate = getJakartaDate();
   todayDate.setHours(0, 0, 0, 0);
   const targetLot = String(lotNo).trim().toUpperCase();
   const foundRow = data.slice(1).find(
@@ -1137,31 +1188,12 @@ async function handleGetLotInfo(lotNo: string) {
 
 let cachedEmployeeList: any[] | null = null;
 let lastEmployeeListFetch = 0;
-const EMPLOYEE_LIST_CACHE_MS = 15 * 1000; // 15 seconds cache to reflect updates almost instantly
+const EMPLOYEE_LIST_CACHE_MS = 120 * 1000; // 120 seconds cache for incredibly fast subsequent loads
 
 async function getEmployeeList(): Promise<any[]> {
   const now = Date.now();
   if (cachedEmployeeList && (now - lastEmployeeListFetch < EMPLOYEE_LIST_CACHE_MS)) {
     return cachedEmployeeList;
-  }
-
-  if (!isDirectConfigured && isAppsScriptAvailable) {
-    try {
-      const resp = await proxyToAppsScript("GET", "getEmployees", {}, {});
-      if (resp && resp.status === "success" && Array.isArray(resp.data)) {
-        cacheAppsScriptResponse("getEmployees", resp);
-        const list = resp.data.map((emp: any) => ({
-          ...emp,
-          user: emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "")
-        }));
-        cachedEmployeeList = list;
-        lastEmployeeListFetch = now;
-        return list;
-      }
-    } catch (err) {
-      console.log("[Error] Failed to fetch employees via Apps Script proxy, falling back to local DB:", err);
-      isAppsScriptAvailable = false; // Disable to make future requests instantaneous
-    }
   }
 
   const data = await getSheetValues("employee");
@@ -1478,7 +1510,7 @@ async function handleBatchActivity(body: any) {
   }
 
   const pad = (n: number) => String(n).padStart(2, "0");
-  const now = new Date();
+  const now = getJakartaDate();
   const timestamp = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
   const empData = (await getSheetValues("employee")) || [];
@@ -1496,7 +1528,7 @@ async function handleBatchActivity(body: any) {
       if (item.expired && item.expired !== "N/A") {
         const expD = new Date(item.expired);
         if (!isNaN(expD.getTime())) {
-          const today = new Date();
+          const today = getJakartaDate();
           today.setHours(0, 0, 0, 0);
           agingExpVal = String(
             Math.round(
@@ -1860,7 +1892,7 @@ async function handleConsolidateDatabase(body: any) {
     }
   }
 
-  const todayDate = new Date();
+  const todayDate = getJakartaDate();
   todayDate.setHours(0, 0, 0, 0);
   const curMonthIdx = todayDate.getMonth();
   const prevMonthIdx = (curMonthIdx - 1 + 12) % 12;
@@ -1954,7 +1986,7 @@ async function handleConsolidateDatabase(body: any) {
 
     const newRow = new Array(headers.length).fill("");
     const pad = (n: number) => String(n).padStart(2, "0");
-    const now = new Date();
+    const now = getJakartaDate();
     const timestamp = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
 
     if (idx.time !== -1) newRow[idx.time] = timestamp;
@@ -2366,203 +2398,6 @@ async function handleSaveAccessRules(body: any) {
   }
 }
 
-let isAppsScriptAvailable = true;
-
-function cacheAppsScriptResponse(action: string, response: any) {
-  if (!response || response.status !== "success" || !response.data) return;
-
-  try {
-    initLocalDb();
-    const db = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
-    let updated = false;
-
-    if (action === "getEmployees" && Array.isArray(response.data)) {
-      const rows: any[][] = [
-        ["Nama", "Email", "User", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"]
-      ];
-      response.data.forEach((emp: any) => {
-        const resolvedUser = emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "");
-        rows.push([
-          emp.name || "",
-          emp.email || "",
-          resolvedUser || "",
-          emp.position || "",
-          emp.province || "",
-          emp.area || "",
-          emp.upline || "",
-          emp.password || "",
-          emp.level !== null && emp.level !== undefined ? String(emp.level) : "",
-          emp.group || ""
-        ]);
-      });
-      db["employee"] = rows;
-      updated = true;
-    } else if (action === "getAccessRules" && typeof response.data === "object") {
-      const rows: any[][] = [
-        ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]
-      ];
-      Object.keys(response.data).forEach((pos) => {
-        const rule = response.data[pos];
-        rows.push([
-          pos,
-          rule.home ? "TRUE" : "FALSE",
-          rule.partner ? "TRUE" : "FALSE",
-          rule.stock ? "TRUE" : "FALSE",
-          rule.pog ? "TRUE" : "FALSE",
-          rule.overview ? "TRUE" : "FALSE",
-          rule.temp ? "TRUE" : "FALSE",
-          rule.access ? "TRUE" : "FALSE"
-        ]);
-      });
-      db["access"] = rows;
-      updated = true;
-    } else if (action === "getChannels" && Array.isArray(response.data)) {
-      const rows: any[][] = [
-        ["Name", "PIC", "Category", "Province", "Area"]
-      ];
-      response.data.forEach((ch: any) => {
-        rows.push([
-          ch.name || "",
-          ch.pic || "",
-          ch.category || "",
-          ch.province || "",
-          ch.area || ""
-        ]);
-      });
-      db["channel"] = rows;
-      updated = true;
-    } else if (action === "getInitialData" && response.data) {
-      const data = response.data;
-      if (Array.isArray(data.employees)) {
-        const rows: any[][] = [
-          ["Nama", "Email", "User", "Position", "Province", "Area", "Upline", "Password", "Level", "Group"]
-        ];
-        data.employees.forEach((emp: any) => {
-          const resolvedUser = emp.user || (emp.email ? (emp.email.includes("@") ? emp.email.split("@")[0] : emp.email) : "");
-          rows.push([
-            emp.name || "",
-            emp.email || "",
-            resolvedUser || "",
-            emp.position || "",
-            emp.province || "",
-            emp.area || "",
-            emp.upline || "",
-            emp.password || "",
-            emp.level !== null && emp.level !== undefined ? String(emp.level) : "",
-            emp.group || ""
-          ]);
-        });
-        db["employee"] = rows;
-        updated = true;
-      }
-      if (data.accessRules && typeof data.accessRules === "object") {
-        const rows: any[][] = [
-          ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"]
-        ];
-        Object.keys(data.accessRules).forEach((pos) => {
-          const rule = data.accessRules[pos];
-          rows.push([
-            pos,
-            rule.home ? "TRUE" : "FALSE",
-            rule.partner ? "TRUE" : "FALSE",
-            rule.stock ? "TRUE" : "FALSE",
-            rule.pog ? "TRUE" : "FALSE",
-            rule.overview ? "TRUE" : "FALSE",
-            rule.temp ? "TRUE" : "FALSE",
-            rule.access ? "TRUE" : "FALSE"
-          ]);
-        });
-          db["access"] = rows;
-        updated = true;
-      }
-      if (Array.isArray(data.channels)) {
-        const rows: any[][] = [
-          ["Name", "PIC", "Category", "Province", "Area"]
-        ];
-        data.channels.forEach((ch: any) => {
-          rows.push([
-            ch.name || "",
-            ch.pic || "",
-            ch.category || "",
-            ch.province || "",
-            ch.area || ""
-          ]);
-        });
-        db["channel"] = rows;
-        updated = true;
-      }
-    }
-
-    if (updated) {
-      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(db, null, 2), "utf8");
-      console.log(`[Cache] Successfully updated local cache for action: ${action}`);
-    }
-  } catch (err) {
-    console.warn(`[Cache Error] Failed to cache response for action ${action}:`, err);
-  }
-}
-
-// Fallback Apps Script proxy fetcher
-async function proxyToAppsScript(
-  method: string,
-  action: string,
-  payload: any,
-  query: any,
-) {
-  const fetchUrl = new URL(ORIGINAL_SCRIPT_URL);
-
-  // Forward all query parameters
-  Object.keys(query).forEach((key) => {
-    fetchUrl.searchParams.append(key, String(query[key]));
-  });
-  if (action) {
-    fetchUrl.searchParams.set("action", action);
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  const fetchOptions: any = {
-    method: method,
-    headers: headers,
-    redirect: "follow",
-  };
-
-  if (method === "POST") {
-    fetchOptions.body = JSON.stringify(payload);
-  }
-
-  console.log(
-    `[Proxy] Routing ${method} request for action: ${action || payload.action} to Apps Script`,
-  );
-  try {
-    const response = await fetch(fetchUrl.toString(), fetchOptions);
-    if (!response.ok) {
-      console.log(
-        `[Proxy Notice] Apps Script returned non-OK status (${response.status}). Disabling Apps Script proxy.`
-      );
-      isAppsScriptAvailable = false;
-      throw new Error(`Apps Script responded with status ${response.status}`);
-    }
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch (err: any) {
-      console.log(
-        `[Proxy Notice] Received non-JSON response from Apps Script (Status: ${response.status}). Disabling Apps Script proxy.`
-      );
-      isAppsScriptAvailable = false;
-      throw new Error(
-        `Apps Script returned invalid JSON (Status: ${response.status}, Length: ${text.length}).`
-      );
-    }
-  } catch (e: any) {
-    console.log(`[Proxy Error] Apps Script proxy request failed. Disabling proxy:`, e.message || e);
-    isAppsScriptAvailable = false;
-    throw e;
-  }
-}
-
 // Main API Router Route
 app.all("/api", async (req, res) => {
   const action = (req.query.action || req.body?.action) as string;
@@ -2572,26 +2407,6 @@ app.all("/api", async (req, res) => {
   console.log(
     `[API Call] Method: ${req.method}, Action: ${action}, User: ${user}`,
   );
-
-  if (!isDirectConfigured && isAppsScriptAvailable && action !== "getUserProfile") {
-    try {
-      const data = await proxyToAppsScript(
-        req.method,
-        action,
-        req.body,
-        req.query,
-      );
-      if (data && data.status === "success") {
-        cacheAppsScriptResponse(action, data);
-      }
-      return res.json(data);
-    } catch (err: any) {
-      console.log(
-        `[Proxy Notice] Apps Script proxy error for action ${action}, using local database as fallback. Error:`, err
-      );
-      isAppsScriptAvailable = false;
-    }
-  }
 
   try {
     let result: any = null;
