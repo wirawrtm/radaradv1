@@ -77,7 +77,7 @@ const normalizePosition = (pos: string | undefined): string => {
     return "Business Solution";
 
   // Custom casing logic for presentation
-  if (clean.includes("analyst")) return "Business Analyst";
+  if (clean.includes("businessanalyst")) return "Business Analyst";
   if (clean.includes("areasalesmanager") || clean.includes("asm"))
     return "Area Sales Manager";
   if (clean.includes("salesmanager") || clean.includes("sm"))
@@ -102,13 +102,26 @@ const getPositionRank = (pos: string | undefined): number => {
   if (norm === "Area Sales Manager") return 3;
   if (norm === "Sales Agronomist") return 4;
   if (norm === "Business Solution") return 5;
-  return 99;
+  
+  const normLower = norm.toLowerCase();
+  if (
+    normLower.includes("head") || 
+    normLower.includes("director") || 
+    normLower.includes("manager") || 
+    normLower.includes("vp") || 
+    normLower.includes("lead") ||
+    normLower.includes("business analyst")
+  ) {
+    return 1;
+  }
+  return 5;
 };
 
 const parseLevelStr = (val: string | number | undefined | null): number => {
   if (val === undefined || val === null || val === "") return NaN;
   if (typeof val === "number") return val;
   const str = String(val).toUpperCase().trim();
+  if (str === "ADMIN") return 4;
   // Prioritize explicit digit
   const match = str.match(/\d+/);
   if (match) return parseInt(match[0], 10);
@@ -160,21 +173,7 @@ const getMemberLevel = (
     return lvl;
   }
 
-  // If teamProfiles exists directly on userData:
-  if (userData?.teamProfiles) {
-    const foundKey = Object.keys(userData.teamProfiles).find(
-      (k) => cleanForMatch(k) === cleanName,
-    );
-    if (
-      foundKey &&
-      userData.teamProfiles[foundKey]?.level !== undefined &&
-      userData.teamProfiles[foundKey]?.level !== null &&
-      String(userData.teamProfiles[foundKey]?.level).trim() !== ""
-    ) {
-      const parsed = parseLevelStr(userData.teamProfiles[foundKey].level);
-      if (!isNaN(parsed)) return parsed;
-    }
-  }
+
 
   // Fallback based on position name:
   const p =
@@ -444,12 +443,14 @@ const getDdaOfUser = (
       (p: any) => cleanForMatch(p.name) === cleanRealRoot,
     ) as any;
     const rootPos = rootProfile?.position || "";
+    const rootLevelClean = rootProfile?.level ? String(rootProfile.level).toLowerCase().trim() : "";
     const isBusinessAnalyst =
       cleanForMatch(rootPos) === "businessanalyst" ||
       cleanRealRoot === "adityawiratama" ||
       cleanRoot === "adityawiratama" ||
       cleanRealRoot === "aditya" ||
-      cleanRoot === "aditya";
+      cleanRoot === "aditya" ||
+      rootLevelClean === "admin";
 
     if (isBusinessAnalyst) {
       return picName;
@@ -994,6 +995,7 @@ const EmployeeEditModal = ({
   allEmployeeNames,
   userData,
   allProvinces,
+  accessRules,
 }) => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -1081,16 +1083,25 @@ const EmployeeEditModal = ({
     );
 
   const loggedInRank = getPositionRank(userData?.position || "");
-  const positions = [
-    "Area Sales Manager",
-    "Sales Agronomist",
-    "Business Analyst",
-    "Sales Manager",
-    "Business Solution",
-  ].filter((p) => {
+  const allPos = useMemo(() => {
+    const list = Object.keys(accessRules || {});
+    const defaults = [
+      "Business Analyst",
+      "Sales Manager",
+      "Area Sales Manager",
+      "Sales Agronomist",
+      "Business Solution",
+    ];
+    defaults.forEach(d => {
+      if (!list.includes(d)) list.push(d);
+    });
+    return list;
+  }, [accessRules]);
+
+  const positions = allPos.filter((p) => {
     if (item && normalizePosition(item.position) === normalizePosition(p))
       return true;
-    return getPositionRank(p) > loggedInRank;
+    return getPositionRank(p) >= loggedInRank;
   });
 
   return (
@@ -1564,6 +1575,18 @@ const Dashboard = ({
   const [isFetchingData, setIsFetchingData] = useState(true);
   const [employees, setEmployees] = useState<any[]>([]);
   const [isEmployeesLoading, setIsEmployeesLoading] = useState(false);
+
+  const computedTeamProfiles = useMemo(() => {
+    if (!employees || employees.length === 0) return undefined;
+    const profiles: Record<string, any> = {};
+    employees.forEach((emp) => {
+      // Use clean names for keys to ensure successful lookup
+      if (emp.name) profiles[cleanForMatch(emp.name)] = emp;
+      if (emp.user) profiles[cleanForMatch(emp.user)] = emp;
+      if (emp.email) profiles[cleanForMatch(emp.email)] = emp;
+    });
+    return profiles;
+  }, [employees]);
   const [loadProgress, setLoadProgress] = useState(0);
   const [showLoader, setShowLoader] = useState(true);
 
@@ -1607,12 +1630,12 @@ const Dashboard = ({
 
   const isBusinessAnalyst = useMemo(() => {
     if (!userData) return false;
-    return (
-      (userData.position &&
+    const isBA = (userData.position &&
         cleanForMatch(userData.position) === "businessanalyst") ||
       cleanForMatch(userData.name || "") === "adityawiratama" ||
-      cleanForMatch(userData.name || "") === "aditya"
-    );
+      cleanForMatch(userData.name || "") === "aditya";
+    const isAdmin = userData.level && String(userData.level).toLowerCase().trim() === "admin";
+    return isBA || isAdmin;
   }, [userData]);
 
   // State Tab Home
@@ -1762,13 +1785,15 @@ const Dashboard = ({
     setIsSavingAccess(true);
     const filteredRules: Record<string, Record<string, boolean>> = {};
     allPositionsList.forEach(pos => {
-      const isBA = pos === "Business Analyst";
       if (accessRules[pos]) {
         filteredRules[pos] = {
-          ...accessRules[pos],
-          overview: isBA && accessRules[pos].overview,
-          temp: isBA && accessRules[pos].temp,
-          access: isBA && accessRules[pos].access
+          home: !!accessRules[pos].home,
+          partner: !!accessRules[pos].partner,
+          stock: !!accessRules[pos].stock,
+          pog: !!accessRules[pos].pog,
+          overview: !!accessRules[pos].overview,
+          temp: !!accessRules[pos].temp,
+          access: !!accessRules[pos].access,
         };
       } else {
         filteredRules[pos] = {
@@ -1776,9 +1801,9 @@ const Dashboard = ({
           partner: true,
           stock: true,
           pog: true,
-          overview: isBA,
-          temp: isBA,
-          access: isBA
+          overview: pos === "Business Analyst",
+          temp: pos === "Business Analyst",
+          access: pos === "Business Analyst"
         };
       }
     });
@@ -1813,19 +1838,21 @@ const Dashboard = ({
   };
 
   const allPositionsList = useMemo(() => {
-    return [
+    const list = Object.keys(accessRules || {});
+    const defaults = [
       "Business Analyst",
       "Sales Manager",
       "Area Sales Manager",
       "Sales Agronomist",
       "Business Solution"
     ];
-  }, []);
+    defaults.forEach(d => {
+      if (!list.includes(d)) list.push(d);
+    });
+    return list;
+  }, [accessRules]);
 
   const toggleAccessRule = (position: string, page: string) => {
-    if (position !== "Business Analyst" && (page === "overview" || page === "temp" || page === "access")) {
-      return;
-    }
     setAccessRules((prev: Record<string, Record<string, boolean>>) => {
       const currentRules = prev[position] || {
         home: true,
@@ -1847,18 +1874,14 @@ const Dashboard = ({
   };
 
   const renderAccessCheckbox = (position: string, page: string) => {
-    const isLockedDisabled = position !== "Business Analyst" && (page === "overview" || page === "temp" || page === "access");
-    const isChecked = isLockedDisabled ? false : (accessRules[position]?.[page] ?? (page === 'overview' || page === 'temp' || page === 'access' ? false : true));
+    const isChecked = !!accessRules[position]?.[page];
     return (
       <button 
-        onClick={() => !isLockedDisabled && toggleAccessRule(position, page)}
-        disabled={isLockedDisabled}
+        onClick={() => toggleAccessRule(position, page)}
         className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border uppercase tracking-wide transition-colors ${
-          isLockedDisabled
-            ? "text-slate-300 bg-slate-100/50 border-slate-100 cursor-not-allowed"
-            : isChecked 
-              ? "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 cursor-pointer" 
-              : "text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 cursor-pointer"
+          isChecked 
+            ? "text-emerald-600 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 cursor-pointer" 
+            : "text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 cursor-pointer"
         }`}
       >
         <span className="material-symbols-outlined text-[12px]">
@@ -1964,17 +1987,29 @@ const Dashboard = ({
     if (!userData) return [];
 
     const myNameClean = cleanForMatch(userData.name || "");
+    const isAdmin = userData.level && String(userData.level).toLowerCase().trim() === "admin";
     const isBusinessAnalyst =
       (userData.position &&
         cleanForMatch(userData.position) === "businessanalyst") ||
       cleanForMatch(userData.name) === "adityawiratama" ||
-      cleanForMatch(userData.name) === "aditya";
+      cleanForMatch(userData.name) === "aditya" ||
+      isAdmin;
 
     let rawList: string[] = [];
 
     if (employees && employees.length > 0) {
       if (isBusinessAnalyst) {
-        const allNames = employees.map((e) => e.name).filter(Boolean);
+        let filteredEmployees = employees;
+        if (isAdmin && userData.group) {
+          const myGroupClean = cleanForMatch(userData.group);
+          if (myGroupClean !== "all" && myGroupClean !== "") {
+            filteredEmployees = employees.filter((e) => {
+              const empGroupClean = cleanForMatch(e.group || "");
+              return empGroupClean === myGroupClean || cleanForMatch(e.name) === myNameClean;
+            });
+          }
+        }
+        const allNames = filteredEmployees.map((e) => e.name).filter(Boolean);
         if (!allNames.some((n) => cleanForMatch(n) === myNameClean)) {
           allNames.unshift(userData.name);
         }
@@ -2040,25 +2075,25 @@ const Dashboard = ({
         rawList = resultList;
       }
     } else if (
-      userData.teamProfiles &&
-      Object.keys(userData.teamProfiles).length > 0
+      computedTeamProfiles &&
+      Object.keys(computedTeamProfiles).length > 0
     ) {
       let realRootName = userData.name;
-      const foundProfileKey = Object.keys(userData.teamProfiles).find(
+      const foundProfileKey = Object.keys(computedTeamProfiles).find(
         (k) =>
           cleanForMatch(k) === myNameClean ||
-          (userData.teamProfiles[k]?.email &&
-            cleanForMatch(userData.teamProfiles[k].email) === myNameClean),
+          (computedTeamProfiles[k]?.email &&
+            cleanForMatch(computedTeamProfiles[k].email) === myNameClean),
       );
       if (foundProfileKey) {
         realRootName = foundProfileKey;
       }
       const cleanRealRoot = cleanForMatch(realRootName);
 
-      const depths = buildDepthMap(realRootName, userData.teamProfiles);
+      const depths = buildDepthMap(realRootName, computedTeamProfiles);
       const maxDepth = 5;
 
-      const filtered = Object.keys(userData.teamProfiles).filter((name) => {
+      const filtered = Object.keys(computedTeamProfiles).filter((name) => {
         const d = depths[cleanForMatch(name)] ?? 99;
         return d <= maxDepth;
       });
@@ -2191,12 +2226,12 @@ const Dashboard = ({
             if (getPositionRank(emp.position) === 5) return false;
           }
         }
-        if (userData.teamProfiles) {
-          const foundKey = Object.keys(userData.teamProfiles).find(
+        if (computedTeamProfiles) {
+          const foundKey = Object.keys(computedTeamProfiles).find(
             (k) => cleanForMatch(k) === cleanName,
           );
           if (foundKey) {
-            const prof = userData.teamProfiles[foundKey];
+            const prof = computedTeamProfiles[foundKey];
             if (prof?.level !== undefined && String(prof.level).trim() === "5")
               return false;
             if (
@@ -2210,14 +2245,24 @@ const Dashboard = ({
       });
     }
 
-    return rawList;
+    // Deduplicate the list to prevent key collision React errors
+    const seen = new Set();
+    const uniqueList = [];
+    for (const name of rawList) {
+      const clean = cleanForMatch(name);
+      if (!seen.has(clean)) {
+        seen.add(clean);
+        uniqueList.push(name);
+      }
+    }
+    return uniqueList;
   }, [
     kiosks,
     userData,
     userData?.name,
     userData?.subordinates,
     userData?.position,
-    userData?.teamProfiles,
+    computedTeamProfiles,
     employees,
   ]);
 
@@ -2366,8 +2411,8 @@ const Dashboard = ({
   useEffect(() => {
     if (
       userData &&
-      userData.teamProfiles &&
-      Object.keys(userData.teamProfiles).length > 0
+      computedTeamProfiles &&
+      Object.keys(computedTeamProfiles).length > 0
     ) {
       const positions: Record<string, string> = {};
       const areas: Record<string, string> = {};
@@ -2376,7 +2421,7 @@ const Dashboard = ({
       const subordinates: Record<string, string[]> = {};
       const levels: Record<string, number> = {};
 
-      Object.entries(userData.teamProfiles).forEach(
+      Object.entries(computedTeamProfiles).forEach(
         ([name, p]: [string, any]) => {
           positions[name] = normalizePosition(p.position);
           areas[name] = String(p.area || "-").trim();
@@ -2423,9 +2468,9 @@ const Dashboard = ({
         },
       );
 
-      Object.keys(userData.teamProfiles).forEach((name) => {
+      Object.keys(computedTeamProfiles).forEach((name) => {
         const directSubs: string[] = [];
-        Object.entries(userData.teamProfiles).forEach(
+        Object.entries(computedTeamProfiles).forEach(
           ([otherName, p]: [string, any]) => {
             if (otherName !== name && p.upline) {
               const cleanUp = cleanForMatch(p.upline);
@@ -2449,11 +2494,13 @@ const Dashboard = ({
   }, [userData]);
 
   useEffect(() => {
+    const isAdmin = userData.level && String(userData.level).toLowerCase().trim() === "admin";
     const isBusinessAnalyst =
       (userData.position &&
         cleanForMatch(userData.position) === "businessanalyst") ||
       cleanForMatch(userData.name) === "adityawiratama" ||
-      cleanForMatch(userData.name) === "aditya";
+      cleanForMatch(userData.name) === "aditya" ||
+      isAdmin;
     if (isBusinessAnalyst) {
       const others = teamMembers.filter(
         (m) => cleanForMatch(m) !== cleanForMatch(userData.name),
@@ -2467,10 +2514,11 @@ const Dashboard = ({
         };
       });
       setTeamPositions((prev) => {
-        if (prev[userData.name] === "Business Analyst") return prev;
+        const targetPos = isAdmin ? (userData.position || "Admin") : "Business Analyst";
+        if (prev[userData.name] === targetPos) return prev;
         return {
           ...prev,
-          [userData.name]: "Business Analyst",
+          [userData.name]: targetPos,
         };
       });
     }
@@ -2770,6 +2818,28 @@ const Dashboard = ({
         const res = await resp.json();
 
         if (res.status === "success" && res.data) {
+          // 0. Update User Data if server profile returned
+          if (res.data.profile) {
+            setUserData((prev) => {
+              if (!prev) return res.data.profile;
+              const updated = { ...prev, ...res.data.profile };
+              
+              const isAditya =
+                cleanForMatch(updated.name) === "adityawiratama" ||
+                cleanForMatch(updated.name) === "aditya" ||
+                cleanForMatch(updated.user || "") === "aditya" ||
+                cleanForMatch(updated.user || "") === "adityawiratama";
+              if (isAditya) {
+                updated.position = "Business Analyst";
+              } else {
+                updated.position = normalizePosition(updated.position);
+              }
+              
+              localStorage.setItem("radar_user_session", JSON.stringify(updated));
+              return updated;
+            });
+          }
+          
           // 1. Employees
           if (res.data.employees && res.data.employees.length > 0) {
             setEmployees(res.data.employees);
@@ -3431,7 +3501,7 @@ const Dashboard = ({
       const resolvedPic = getDdaOfUser(
         k.pic || "",
         userData?.name,
-        userData?.teamProfiles,
+        computedTeamProfiles,
       );
       const cleanPic = cleanForMatch(resolvedPic);
       const cleanKiosk = cleanForMatch(k.name);
@@ -3481,7 +3551,7 @@ const Dashboard = ({
         const resolvedUser = getDdaOfUser(
           String(item.user || ""),
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         const cleanUser = cleanForMatch(resolvedUser);
 
@@ -3567,7 +3637,7 @@ const Dashboard = ({
       const resolvedPic = getDdaOfUser(
         k.pic || "",
         userData?.name,
-        userData?.teamProfiles,
+        computedTeamProfiles,
       );
       return { ...k, pic: resolvedPic };
     });
@@ -3638,16 +3708,11 @@ const Dashboard = ({
   }, [mappedChannelsByPic, mappingCategory]);
 
   const myKiosks = useMemo(() => {
-    const isBusinessAnalyst =
-      (userData.position &&
-        cleanForMatch(userData.position) === "businessanalyst") ||
-      cleanForMatch(userData.name) === "adityawiratama" ||
-      cleanForMatch(userData.name) === "aditya";
     if (isBusinessAnalyst) {
       return kiosks;
     }
     return kiosks.filter((k) => matchNames(k.pic, userData.name));
-  }, [kiosks, userData.name, userData.position]);
+  }, [kiosks, userData.name, isBusinessAnalyst]);
 
   const filteredKiosks = useMemo(
     () =>
@@ -3738,7 +3803,7 @@ const Dashboard = ({
       const cleanKName = cleanForMatch(kioskName);
       const kInfo = kiosksMapByCleanName[cleanKName] || {};
       const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
-      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      const pic = getDdaOfUser(rawPic, userData?.name, computedTeamProfiles);
       let upline = normalizeName(String(kInfo.upline || ""));
       if (pic.toLowerCase() === "listianto") {
         upline = "AGUS HERDIANTO";
@@ -3927,7 +3992,7 @@ const Dashboard = ({
       const kInfo =
         kiosks.find((k) => cleanForMatch(k.name) === cleanKName) || {};
       const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
-      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      const pic = getDdaOfUser(rawPic, userData?.name, computedTeamProfiles);
       if (pic && pic !== "Unknown") teamsSet.add(String(pic).trim());
     });
     const teams = Array.from(teamsSet).filter(Boolean).sort();
@@ -3939,7 +4004,7 @@ const Dashboard = ({
       const kInfo =
         kiosks.find((k) => cleanForMatch(k.name) === cleanKName) || {};
       const rawPic = normalizeName(String(d.user || kInfo.pic || "Unknown"));
-      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      const pic = getDdaOfUser(rawPic, userData?.name, computedTeamProfiles);
       const matchedMember = teamMembers.find((m) => matchNames(m, pic));
       const area =
         getFromRecord<string>(teamAreas, matchedMember || pic) ||
@@ -4035,7 +4100,7 @@ const Dashboard = ({
       const cleanKName = cleanForMatch(kioskName);
       const kInfo = kiosksMapByCleanName[cleanKName] || {};
       const rawPic = normalizeName(String(itemUser || kInfo.pic || "Unknown"));
-      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      const pic = getDdaOfUser(rawPic, userData?.name, computedTeamProfiles);
       let upline = normalizeName(String(kInfo.upline || ""));
       if (pic.toLowerCase() === "listianto") {
         upline = "AGUS HERDIANTO";
@@ -4287,7 +4352,7 @@ const Dashboard = ({
         const pic = getDdaOfUser(
           rawPic,
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         if (cleanForMatch(pic) !== cleanForMatch(filterBelowTeam)) {
           return;
@@ -4300,7 +4365,7 @@ const Dashboard = ({
         const pic = getDdaOfUser(
           rawPic,
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         const matchedMember = teamMembers.find((m) => matchNames(m, pic));
         const area =
@@ -4376,7 +4441,7 @@ const Dashboard = ({
         const resolvedPic = getDdaOfUser(
           k.pic || "",
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         return cleanForMatch(resolvedPic) === cleanForMatch(filterBelowTeam);
       });
@@ -4386,7 +4451,7 @@ const Dashboard = ({
         const resolvedPic = getDdaOfUser(
           k.pic || "",
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         const matchedMember = teamMembers.find((m) =>
           matchNames(m, resolvedPic),
@@ -5367,7 +5432,7 @@ const Dashboard = ({
         const picName = getDdaOfUser(
           rawPic,
           userData?.name,
-          userData?.teamProfiles,
+          computedTeamProfiles,
         );
         const matchedMember = getTeamMemberMatch(picName);
         if (matchedMember) {
@@ -5469,7 +5534,7 @@ const Dashboard = ({
       const rawPic = normalizeName(
         String(item.user || kioskInfo.pic || "Unknown"),
       );
-      const pic = getDdaOfUser(rawPic, userData?.name, userData?.teamProfiles);
+      const pic = getDdaOfUser(rawPic, userData?.name, computedTeamProfiles);
       let upline = normalizeName(String(kioskInfo.upline || ""));
       if (pic.toLowerCase() === "listianto") {
         upline = "AGUS HERDIANTO";
@@ -5544,13 +5609,23 @@ const Dashboard = ({
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
-    const teamData = enrichedData.filter((item) => {
+        const teamData = enrichedData.filter((item) => {
       const picClean = cleanForMatch(item.pic);
-      const isTeamMember =
+      let isTeamMember =
         teamMembersCleanSet.has(picClean) ||
         nonLeafTeamMembersClean.some((m) => picClean.includes(m));
-      const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
+        
+      if (!isTeamMember && computedTeamProfiles) {
+        const emp = computedTeamProfiles[picClean];
+        if (emp && emp.name) {
+          const empNameClean = cleanForMatch(emp.name);
+          if (teamMembersCleanSet.has(empNameClean)) {
+            isTeamMember = true;
+          }
+        }
+      }
 
+      const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
       return isTeamMember && isCropMatch;
     });
 
@@ -9923,6 +9998,7 @@ const Dashboard = ({
             allEmployeeNames={employees.map((emp) => emp.name)}
             userData={userData}
             allProvinces={availableProvinces}
+            accessRules={accessRules}
           />
           <EmployeeDeleteModal
             isOpen={employeeDeleteModal.isOpen}
@@ -11864,9 +11940,21 @@ export default function App() {
       if (data) {
         localStorage.setItem("radar_user_session", JSON.stringify(data));
         localStorage.removeItem("radar_logged_out");
+
+        // Set activeTab to overview on login if they are a Business Analyst or Admin
+        const cleanPos = cleanForMatch(data.position || "");
+        const cleanName = cleanForMatch(data.name || "");
+        const isAdmin = data.level && String(data.level).toLowerCase().trim() === "admin";
+        const isBA = cleanPos === "businessanalyst" || cleanName === "adityawiratama" || cleanName === "aditya" || isAdmin;
+        if (isBA) {
+          setActiveTab("overview");
+        } else {
+          setActiveTab("home");
+        }
       } else {
         localStorage.removeItem("radar_user_session");
         localStorage.setItem("radar_logged_out", "true");
+        setActiveTab("home");
       }
     } catch (e) {
       console.error("Failed to save user session", e);
@@ -11876,19 +11964,60 @@ export default function App() {
 
   const handleLogout = () => {
     saveUserSession(null);
+    try {
+      localStorage.removeItem('appAccessRules');
+    } catch (e) {
+      console.error('Failed to clear appAccessRules on logout', e);
+    }
+    setAccessRules({
+      "Business Analyst": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
+      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Sales Agronomist": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Business Solution": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+    });
   };
-  const [activeTab, setActiveTab] = useState("home");
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const savedSession = localStorage.getItem("radar_user_session");
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession);
+        const name = parsed.name || "";
+        const cleanName = cleanForMatch(name);
+        const isAditya = cleanName === "adityawiratama" || cleanName === "aditya";
+        const position = parsed.position || "";
+        const cleanPos = cleanForMatch(position);
+
+        const isAdmin = parsed.level && String(parsed.level).toLowerCase().trim() === "admin";
+        const isBA = cleanPos === "businessanalyst" || isAditya || isAdmin;
+        if (isBA) {
+          const savedRules = localStorage.getItem('appAccessRules');
+          if (savedRules) {
+            const rules = JSON.parse(savedRules);
+            const matchedKey = Object.keys(rules).find(k => cleanForMatch(k) === "businessanalyst" || cleanForMatch(k) === "aditya" || cleanForMatch(k) === "adityawiratama" || cleanForMatch(k) === "admin");
+            if (matchedKey && rules[matchedKey]?.overview === false) {
+              return "home";
+            }
+          }
+          return "overview";
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to determine initial tab:", e);
+    }
+    return "home";
+  });
   const [isMenuVisible, setIsMenuVisible] = useState(true);
   const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(true);
 
   const isBusinessAnalyst = useMemo(() => {
     if (!userData) return false;
-    return (
-      (userData.position &&
+    const isBA = (userData.position &&
         cleanForMatch(userData.position) === "businessanalyst") ||
       cleanForMatch(userData.name || "") === "adityawiratama" ||
-      cleanForMatch(userData.name || "") === "aditya"
-    );
+      cleanForMatch(userData.name || "") === "aditya";
+    const isAdmin = userData.level && String(userData.level).toLowerCase().trim() === "admin";
+    return isBA || isAdmin;
   }, [userData]);
 
   // Filter states for Executive Overview Tab
@@ -11955,23 +12084,61 @@ export default function App() {
     };
   });
 
-  const userAccess = accessRules[userPosition] || {
-    home: true,
-    partner: true,
-    stock: true,
-    pog: true,
-    overview: userPosition === "Business Analyst",
-    temp: userPosition === "Business Analyst",
-    access: userPosition === "Business Analyst"
-  };
+  const userAccess = useMemo(() => {
+    if (!userData) {
+      return { home: false, partner: false, stock: false, pog: false, overview: false, temp: false, access: false };
+    }
 
-  const showHomeTab = userData ? userAccess.home : false;
-  const showPartnerTab = userData ? userAccess.partner : false;
-  const showStockTab = userData ? userAccess.stock : false;
-  const showPogTab = userData ? userAccess.pog : false;
-  const showOverviewTab = userData ? (isBusinessAnalyst && userAccess.overview) : false;
-  const showTempTab = userData ? (isBusinessAnalyst && userAccess.temp) : false;
-  const showAccessTab = userData ? (isBusinessAnalyst && userAccess.access) : false;
+
+    const rawPos = userData.position || "";
+    const cleanRaw = cleanForMatch(rawPos);
+    const cleanNorm = cleanForMatch(userPosition);
+
+    // 1. Try to find match using raw position clean-match
+    let matchedKey = Object.keys(accessRules || {}).find(
+      (key) => cleanForMatch(key) === cleanRaw
+    );
+
+    // 2. If not found, try to find match using normalized position clean-match
+    if (!matchedKey) {
+      matchedKey = Object.keys(accessRules || {}).find(
+        (key) => cleanForMatch(key) === cleanNorm
+      );
+    }
+
+    if (matchedKey && accessRules[matchedKey]) {
+      const rule = accessRules[matchedKey];
+      return {
+        home: rule.home ?? true,
+        partner: rule.partner ?? true,
+        stock: rule.stock ?? true,
+        pog: rule.pog ?? true,
+        overview: !!rule.overview,
+        temp: !!rule.temp,
+        access: !!rule.access,
+      };
+    }
+
+    // 3. Fallback default rules
+    const isBA = userPosition === "Business Analyst";
+    return {
+      home: true,
+      partner: true,
+      stock: true,
+      pog: true,
+      overview: isBA,
+      temp: isBA,
+      access: isBA,
+    };
+  }, [userData, userPosition, accessRules]);
+
+  const showHomeTab = userData ? !!userAccess.home : false;
+  const showPartnerTab = userData ? !!userAccess.partner : false;
+  const showStockTab = userData ? !!userAccess.stock : false;
+  const showPogTab = userData ? !!userAccess.pog : false;
+  const showOverviewTab = userData ? !!userAccess.overview : false;
+  const showTempTab = userData ? !!userAccess.temp : false;
+  const showAccessTab = userData ? (!!userAccess.access || isAditya) : false;
 
   // Eager redirection on render to avoid layout flashing and guarantee seamless first login redirection
   if (userData) {
@@ -11987,10 +12154,10 @@ export default function App() {
     if (isCurrentTabForbidden) {
       let targetTab = "";
       if (showHomeTab) targetTab = "home";
+      else if (showOverviewTab) targetTab = "overview";
       else if (showPartnerTab) targetTab = "partner";
       else if (showStockTab) targetTab = "summary";
       else if (showPogTab) targetTab = "pog";
-      else if (showOverviewTab) targetTab = "overview";
       else if (showTempTab) targetTab = "temp";
       else if (showAccessTab) targetTab = "access";
 
@@ -12014,22 +12181,15 @@ export default function App() {
       ) {
         // Find first available tab
         if (showHomeTab) setActiveTab("home");
+        else if (showOverviewTab) setActiveTab("overview");
         else if (showPartnerTab) setActiveTab("partner");
         else if (showStockTab) setActiveTab("summary");
         else if (showPogTab) setActiveTab("pog");
-        else if (showOverviewTab) setActiveTab("overview");
         else if (showTempTab) setActiveTab("temp");
         else if (showAccessTab) setActiveTab("access");
       }
     }
   }, [userData, activeTab, showHomeTab, showPartnerTab, showStockTab, showPogTab, showTempTab, showOverviewTab, showAccessTab]);
-
-  // Redirect Business Analysts to Executive Overview landing page upon login so they don't see the blank-ish/info page on Home tab
-  useEffect(() => {
-    if (userData && isBusinessAnalyst && activeTab === "home") {
-      setActiveTab("overview");
-    }
-  }, [userData, isBusinessAnalyst]);
 
   // Load Google Material Symbols for icons
   useEffect(() => {
@@ -12069,6 +12229,23 @@ export default function App() {
         } else {
           data.position = normalizePosition(data.position);
         }
+
+        // Fetch and set actual access rules on login to prevent flashing of unauthorized tabs
+        try {
+          const accessResp = await fetch(`${SCRIPT_URL}?action=getAccessRules`);
+          const accessRes = await accessResp.json();
+          if (accessRes.status === "success" && accessRes.data && Object.keys(accessRes.data).length > 0) {
+            setAccessRules(accessRes.data);
+            try {
+              localStorage.setItem('appAccessRules', JSON.stringify(accessRes.data));
+            } catch (e) {
+              console.error('Failed to save appAccessRules on login', e);
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to pre-fetch access rules during login:", err);
+        }
+
         saveUserSession(data);
         return { success: true };
       } else {

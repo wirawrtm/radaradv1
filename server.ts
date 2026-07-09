@@ -755,7 +755,8 @@ async function handleGetChannels(user: string) {
     let isBusinessAnalyst =
       lowerUser === "adityawiratama" ||
       lowerUser.includes("adityawiratama") ||
-      lowerUser.includes("analyst");
+      lowerUser === "analyst" ||
+      lowerUser === "businessanalyst";
     const userAliases = new Set([lowerUser]);
 
     if (matchedRow) {
@@ -770,10 +771,13 @@ async function handleGetChannels(user: string) {
       if (rowEmail !== "") userAliases.add(rowEmail);
       if (rowUser !== "") userAliases.add(rowUser);
 
+      const cleanRowPos = rowPos.replace(/\s+/g, "");
+      const levelIdx = empHeaders.findIndex((h: any) => /level|grade/i.test(String(h).trim()));
+      const rowLevel = levelIdx !== -1 ? String(matchedRow[levelIdx] || "").trim().toLowerCase() : "";
       if (
-        rowPos.includes("analyst") ||
-        rowPos.includes("business analyst") ||
-        rowPos.includes("businessanalyst")
+        cleanRowPos === "businessanalyst" ||
+        cleanRowPos === "analyst" ||
+        rowLevel === "admin"
       ) {
         isBusinessAnalyst = true;
       }
@@ -782,7 +786,19 @@ async function handleGetChannels(user: string) {
     if (isBusinessAnalyst) {
       const emailIdx = empHeaders.findIndex((h: any) => /email/i.test(String(h).trim()));
       const userIdx = empHeaders.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
+      const groupIdx = empHeaders.findIndex((h: any) => /group|tim|divisi|division/i.test(String(h).trim()));
+      const levelIdx = empHeaders.findIndex((h: any) => /level|grade/i.test(String(h).trim()));
+      
+      let adminGroup = "";
+      if (matchedRow && levelIdx !== -1 && groupIdx !== -1) {
+        const rowLevel = String(matchedRow[levelIdx] || "").trim().toLowerCase();
+        if (rowLevel === "admin") {
+          adminGroup = String(matchedRow[groupIdx] || "").trim().toLowerCase();
+        }
+      }
+
       empData.slice(1).forEach((row) => {
+        const rowGroup = groupIdx !== -1 ? String(row[groupIdx] || "").trim().toLowerCase() : "";
         const rowName =
           idxE.name !== -1
             ? String(row[idxE.name] || "")
@@ -801,6 +817,14 @@ async function handleGetChannels(user: string) {
                 .trim()
                 .toLowerCase()
             : "";
+
+        // If admin has a specific group, only include employees of that group (or if they are the admin themselves)
+        if (adminGroup && adminGroup !== "all" && adminGroup !== "") {
+          if (rowGroup !== adminGroup && rowName !== lowerUser && rowEmail !== lowerUser && rowUser !== lowerUser) {
+            return;
+          }
+        }
+
         if (rowName !== "") userAliases.add(rowName);
         if (rowEmail !== "") userAliases.add(rowEmail);
         if (rowUser !== "") userAliases.add(rowUser);
@@ -1230,9 +1254,23 @@ async function getEmployeeList(): Promise<any[]> {
     };
   });
 
-  cachedEmployeeList = list;
+    // Deduplicate employees
+  const seenEmployees = new Set();
+  const dedupedList = [];
+  for (const emp of list) {
+    const cleanName = String(emp.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanUser = String(emp.user || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const uniqKey = cleanName;
+    
+    if (!seenEmployees.has(uniqKey) && cleanName !== "") {
+      seenEmployees.add(uniqKey);
+      dedupedList.push(emp);
+    }
+  }
+
+  cachedEmployeeList = dedupedList;
   lastEmployeeListFetch = now;
-  return list;
+  return dedupedList;
 }
 
 async function handleGetUserProfile(user: string) {
@@ -1284,23 +1322,28 @@ async function handleGetUserProfile(user: string) {
   if (profile.email !== "") userAliases.add(profile.email.toLowerCase());
   if (profile.user !== "") userAliases.add(profile.user.toLowerCase());
 
+  const cleanProfilePos = profile.position ? profile.position.toLowerCase().replace(/\s+/g, "") : "";
+  const profileLevelClean = profile.level ? String(profile.level).toLowerCase().trim() : "";
   const isBusinessAnalyst =
     lowerUser === "adityawiratama" ||
     lowerUser.includes("adityawiratama") ||
-    (profile.position &&
-      (profile.position.toLowerCase().includes("analyst") ||
-        profile.position.toLowerCase().includes("business analyst") ||
-        profile.position.toLowerCase().includes("businessanalyst")));
+    cleanProfilePos === "businessanalyst" ||
+    cleanProfilePos === "analyst" ||
+    profileLevelClean === "admin";
   if (isBusinessAnalyst) {
-    profile.position = "Business Analyst";
+    if (profileLevelClean !== "admin") {
+      profile.position = "Business Analyst";
+    }
     const asmSubordinates: string[] = [];
-    employees.forEach((emp) => {
-      if (emp.name !== "" && emp.position === "Area Sales Manager") {
-        if (!asmSubordinates.includes(emp.name)) {
-          asmSubordinates.push(emp.name);
+    if (profileLevelClean !== "admin") {
+      employees.forEach((emp) => {
+        if (emp.name !== "" && emp.position === "Area Sales Manager") {
+          if (!asmSubordinates.includes(emp.name)) {
+            asmSubordinates.push(emp.name);
+          }
         }
-      }
-    });
+      });
+    }
     profile.subordinates = asmSubordinates;
     return { status: "success", data: profile };
   }
@@ -1406,8 +1449,22 @@ async function handleGetEmployees() {
         group: idx.group !== -1 ? String(row[idx.group] || "").trim() : "",
       };
     });
-
-  return { status: "success", data: result };
+    
+  // Deduplicate employees by exact clean name or username to prevent key collisions
+  const seenEmployees = new Set();
+  const dedupedResult = [];
+  for (const emp of result) {
+    const cleanName = String(emp.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanUser = String(emp.user || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const uniqKey = cleanName;
+    
+    if (!seenEmployees.has(uniqKey) && cleanName !== "") {
+      seenEmployees.add(uniqKey);
+      dedupedResult.push(emp);
+    }
+  }
+  
+  return { status: "success", data: dedupedResult };
 }
 
 async function handleGetInitialData(user: string) {
@@ -2281,23 +2338,18 @@ async function handleGetAccessRules() {
         if (nameIdx !== -1 && !row[nameIdx]) continue;
         const rawPos = posIdx !== -1 ? row[posIdx] : "";
         const normalized = normalizePosition(rawPos);
-        
-        // Restrict to standard positions ONLY to prevent obsolete/unwanted positions like VP and National Head
-        const VALID_POSITIONS = [
-          "Business Analyst",
-          "Sales Manager",
-          "Area Sales Manager",
-          "Sales Agronomist",
-          "Business Solution"
-        ];
-        if (normalized && VALID_POSITIONS.includes(normalized) && !uniquePositions.includes(normalized)) {
+        if (normalized && !uniquePositions.includes(normalized)) {
           uniquePositions.push(normalized);
         }
       }
     }
-    if (uniquePositions.length === 0) {
-      uniquePositions.push("Business Analyst", "Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution");
-    }
+    // Always guarantee defaults are present
+    const defaults = ["Business Analyst", "Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution"];
+    defaults.forEach(d => {
+      if (!uniquePositions.includes(d)) {
+        uniquePositions.push(d);
+      }
+    });
 
     const data = await getSheetValues("access");
     const rules: Record<string, any> = {};
@@ -2309,15 +2361,14 @@ async function handleGetAccessRules() {
         const position = String(row[0]).trim();
         if (!position) continue;
         existingPositions.push(position);
-        const isBA = position === "Business Analyst";
         rules[position] = {
           home: row[1] === true || String(row[1]).toUpperCase() === "TRUE",
           partner: row[2] === true || String(row[2]).toUpperCase() === "TRUE",
           stock: row[3] === true || String(row[3]).toUpperCase() === "TRUE",
           pog: row[4] === true || String(row[4]).toUpperCase() === "TRUE",
-          overview: isBA && (row[5] === true || String(row[5]).toUpperCase() === "TRUE"),
-          temp: isBA && (row[6] === true || String(row[6]).toUpperCase() === "TRUE"),
-          access: isBA && (row[7] === true || String(row[7]).toUpperCase() === "TRUE"),
+          overview: row[5] === true || String(row[5]).toUpperCase() === "TRUE",
+          temp: row[6] === true || String(row[6]).toUpperCase() === "TRUE",
+          access: row[7] === true || String(row[7]).toUpperCase() === "TRUE",
         };
       }
     }
@@ -2366,28 +2417,17 @@ async function handleSaveAccessRules(body: any) {
     const headers = ["position", "home", "partner", "stock", "pog", "overview", "temp", "access"];
     const rows: any[][] = [headers];
 
-    // Restrict the saved roles to standard 5 positions only!
-    const VALID_POSITIONS = [
-      "Business Analyst",
-      "Sales Manager",
-      "Area Sales Manager",
-      "Sales Agronomist",
-      "Business Solution"
-    ];
-
     for (const position in rules) {
-      if (!VALID_POSITIONS.includes(position)) continue; // Filter out VP, National Head, etc.
       const rule = rules[position];
-      const isBA = position === "Business Analyst";
       rows.push([
         position,
         rule.home ? "TRUE" : "FALSE",
         rule.partner ? "TRUE" : "FALSE",
         rule.stock ? "TRUE" : "FALSE",
         rule.pog ? "TRUE" : "FALSE",
-        isBA && rule.overview ? "TRUE" : "FALSE",
-        isBA && rule.temp ? "TRUE" : "FALSE",
-        isBA && rule.access ? "TRUE" : "FALSE",
+        rule.overview ? "TRUE" : "FALSE",
+        rule.temp ? "TRUE" : "FALSE",
+        rule.access ? "TRUE" : "FALSE",
       ]);
     }
 
