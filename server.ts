@@ -2104,8 +2104,11 @@ async function handleAddPartner(body: any) {
     upline: headers.findIndex((h: any) =>
       /upline|spv|supervisor/i.test(String(h).trim()),
     ),
+    province: headers.findIndex((h: any) =>
+      /provinsi|province/i.test(String(h).trim()),
+    ),
     area: headers.findIndex((h: any) =>
-      /area|provinsi|province|wilayah/i.test(String(h).trim()),
+      /^area$/i.test(String(h).trim()),
     ),
     group: headers.findIndex((h: any) =>
       /group|tim|divisi|division/i.test(String(h).trim()),
@@ -2133,9 +2136,20 @@ async function handleAddPartner(body: any) {
   if (!userGroup) {
     userGroup = getUserGroup(body.user, empData);
   }
+  
   let userProvince = body.province || "";
-  if (!userProvince) {
-    userProvince = getUserProvince(body.user, empData);
+  let userArea = "";
+
+  // Lookup in employee sheet to resolve PIC's Province and Area
+  if (body.pic && empData.length > 1) {
+    const picRow = findEmployeeRow(body.pic, empData);
+    if (picRow) {
+      const empHeaders = empData[0];
+      const provIdx = empHeaders.findIndex((h: any) => /province|provinsi/i.test(String(h).trim()));
+      const areaIdx = empHeaders.findIndex((h: any) => /area/i.test(String(h).trim()));
+      if (!userProvince && provIdx !== -1) userProvince = String(picRow[provIdx] || "").trim();
+      if (areaIdx !== -1) userArea = String(picRow[areaIdx] || "").trim();
+    }
   }
 
   const newRow = new Array(headers.length).fill("");
@@ -2143,11 +2157,19 @@ async function handleAddPartner(body: any) {
   if (idx.cat !== -1) newRow[idx.cat] = body.category || "";
   if (idx.pic !== -1) newRow[idx.pic] = body.pic || "";
   if (idx.upline !== -1) newRow[idx.upline] = empDetails.upline || "";
-  if (idx.area !== -1) newRow[idx.area] = userProvince || empDetails.area || "";
+  if (idx.province !== -1) newRow[idx.province] = userProvince || "";
+  if (idx.area !== -1) newRow[idx.area] = userArea || empDetails.area || "";
   if (idx.group !== -1) newRow[idx.group] = userGroup;
 
   await appendSheetRow("channel", newRow);
-  return { status: "success" };
+  
+  // Return success with the exact sheet row number as the new ID
+  const newId = data.length + 1;
+  return { 
+    status: "success", 
+    id: newId, 
+    message: `Partner "${body.name}" berhasil ditambahkan` 
+  };
 }
 
 async function handleUpdatePartner(body: any) {
@@ -2168,8 +2190,11 @@ async function handleUpdatePartner(body: any) {
     upline: headers.findIndex((h: any) =>
       /upline|spv|supervisor/i.test(String(h).trim()),
     ),
+    province: headers.findIndex((h: any) =>
+      /provinsi|province/i.test(String(h).trim()),
+    ),
     area: headers.findIndex((h: any) =>
-      /area|provinsi|province|wilayah/i.test(String(h).trim()),
+      /^area$/i.test(String(h).trim()),
     ),
     group: headers.findIndex((h: any) =>
       /group|tim|divisi|division/i.test(String(h).trim()),
@@ -2222,9 +2247,20 @@ async function handleUpdatePartner(body: any) {
     if (!userGroup) {
       userGroup = getUserGroup(body.user, empData);
     }
+    
     let userProvince = body.province || "";
-    if (!userProvince) {
-      userProvince = getUserProvince(body.user, empData);
+    let userArea = "";
+
+    // Lookup in employee sheet to resolve PIC's Province and Area
+    if (body.pic && empData.length > 1) {
+      const picRow = findEmployeeRow(body.pic, empData);
+      if (picRow) {
+        const empHeaders = empData[0];
+        const provIdx = empHeaders.findIndex((h: any) => /province|provinsi/i.test(String(h).trim()));
+        const areaIdx = empHeaders.findIndex((h: any) => /area/i.test(String(h).trim()));
+        if (!userProvince && provIdx !== -1) userProvince = String(picRow[provIdx] || "").trim();
+        if (areaIdx !== -1) userArea = String(picRow[areaIdx] || "").trim();
+      }
     }
 
     if (idx.pic !== -1 && body.pic !== undefined) {
@@ -2233,9 +2269,11 @@ async function handleUpdatePartner(body: any) {
     if (idx.upline !== -1) {
       data[rowIndex][idx.upline] = empDetails.upline || "";
     }
-    const resolvedProv = userProvince || empDetails.area;
-    if (idx.area !== -1 && resolvedProv) {
-      data[rowIndex][idx.area] = resolvedProv;
+    if (idx.province !== -1) {
+      data[rowIndex][idx.province] = userProvince || "";
+    }
+    if (idx.area !== -1) {
+      data[rowIndex][idx.area] = userArea || empDetails.area || "";
     }
     if (idx.channel !== -1 && body.name !== undefined && body.name !== "") {
       data[rowIndex][idx.channel] = body.name;
