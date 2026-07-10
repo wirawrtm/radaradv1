@@ -853,6 +853,7 @@ const PartnerEditModal = ({
       isAdd,
       name: partnerName,
       category: category,
+      originalName: isAdd ? "" : (item?.name || ""),
     });
   };
 
@@ -3394,19 +3395,22 @@ const Dashboard = ({
     setIsActionLoading(true);
     try {
       const isAdd = !id || additionalData.isAdd;
+      const payload = {
+        action: isAdd ? "addPartner" : "updatePartner",
+        id: id || "partner_" + Date.now(),
+        pic: newPic,
+        name: additionalData.name || "",
+        originalName: additionalData.originalName || "",
+        category: additionalData.category || "",
+        user: userData.name,
+        group: userData?.group || "",
+        province: userData?.province || "",
+      };
+
       const resp = await fetch(SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify({
-          action: isAdd ? "addPartner" : "updatePartner",
-          id: id || "partner_" + Date.now(),
-          pic: newPic,
-          name: additionalData.name || "",
-          category: additionalData.category || "",
-          user: userData.name,
-          group: userData?.group || "",
-          province: userData?.province || "",
-        }),
+        body: JSON.stringify(payload),
       });
 
       const contentType = resp.headers.get("content-type");
@@ -3416,11 +3420,46 @@ const Dashboard = ({
 
       const res = await resp.json();
       if (res.status === "success") {
+        if (isAdd) {
+          const newPartner = {
+            id: res.id || payload.id,
+            name: payload.name,
+            category: payload.category,
+            pic: payload.pic,
+            upline: "",
+            area: payload.province || "",
+            group: payload.group || "",
+          };
+          setKiosks((prev) => [...prev, newPartner]);
+        } else {
+          setKiosks((prev) =>
+            prev.map((k) => {
+              const matchesId = String(k.id) === String(id);
+              const matchesOriginalName =
+                payload.originalName &&
+                String(k.name).trim().toLowerCase() ===
+                  String(payload.originalName).trim().toLowerCase();
+              if (matchesId || matchesOriginalName) {
+                return {
+                  ...k,
+                  name: payload.name || k.name,
+                  category: payload.category || k.category,
+                  pic: payload.pic,
+                };
+              }
+              return k;
+            }),
+          );
+        }
         setPartnerEditModal({ isOpen: false, item: null });
         setChannelsRefreshKey((prev) => prev + 1);
+        alert(res.message || "Partner berhasil disimpan");
+      } else {
+        alert("Gagal simpan partner: " + (res.message || "Unknown error"));
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("Gagal update data partner", e);
+      alert("Terjadi kesalahan saat menyimpan data partner: " + e.message);
     } finally {
       setIsActionLoading(false);
     }
@@ -3431,6 +3470,8 @@ const Dashboard = ({
       alert("Data partner tidak valid untuk dihapus (ID & Nama kosong)");
       return;
     }
+    const targetId = partnerDeleteModal.item.id;
+    const targetName = partnerDeleteModal.item.name;
     setIsActionLoading(true);
     try {
       console.log("[Delete] Sending request to:", SCRIPT_URL);
@@ -3439,8 +3480,8 @@ const Dashboard = ({
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({
           action: "deletePartner",
-          id: partnerDeleteModal.item.id,
-          name: partnerDeleteModal.item.name,
+          id: targetId,
+          name: targetName,
           user: userData.name,
         }),
       });
@@ -3454,6 +3495,15 @@ const Dashboard = ({
 
       const res = await resp.json();
       if (res.status === "success") {
+        setKiosks((prev) =>
+          prev.filter(
+            (k) =>
+              String(k.id) !== String(targetId) &&
+              (!targetName ||
+                String(k.name).trim().toLowerCase() !==
+                  String(targetName).trim().toLowerCase()),
+          ),
+        );
         setPartnerDeleteModal({ isOpen: false, item: null });
         setChannelsRefreshKey((prev) => prev + 1);
         alert(res.message || "Partner berhasil dihapus");
