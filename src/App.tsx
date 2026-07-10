@@ -71,15 +71,21 @@ const normalizePosition = (pos: string | undefined): string => {
     return "Business Analyst";
   if (clean === "areasalesmanager" || clean === "asm")
     return "Area Sales Manager";
+  if (clean === "vegetablessalesmanager" || clean === "vsm")
+    return "Vegetables Sales Manager";
   if (clean === "salesmanager" || clean === "sm") return "Sales Manager";
   if (clean === "salesagronomist" || clean === "sa") return "Sales Agronomist";
   if (clean === "businesssolution" || clean === "bs")
     return "Business Solution";
+  if (clean === "countryhead") return "Country Head";
+  if (clean === "commerciallead") return "Commercial Lead";
 
   // Custom casing logic for presentation
   if (clean.includes("businessanalyst")) return "Business Analyst";
   if (clean.includes("areasalesmanager") || clean.includes("asm"))
     return "Area Sales Manager";
+  if (clean.includes("vegetablessalesmanager"))
+    return "Vegetables Sales Manager";
   if (clean.includes("salesmanager") || clean.includes("sm"))
     return "Sales Manager";
   if (
@@ -95,9 +101,11 @@ const normalizePosition = (pos: string | undefined): string => {
 
 const getPositionRank = (pos: string | undefined): number => {
   // Hirarki Posisi (dari yang tertinggi ke terendah):
-  // Business Analyst (1) -> Sales Manager (2) -> Area Sales Manager (3) -> Sales Agronomist (4) -> Business Solution (5)
   const norm = normalizePosition(pos);
+  if (norm === "Country Head") return 1;
+  if (norm === "Commercial Lead") return 1;
   if (norm === "Business Analyst") return 1;
+  if (norm === "Vegetables Sales Manager") return 2;
   if (norm === "Sales Manager") return 2;
   if (norm === "Area Sales Manager") return 3;
   if (norm === "Sales Agronomist") return 4;
@@ -107,13 +115,13 @@ const getPositionRank = (pos: string | undefined): number => {
   if (
     normLower.includes("head") || 
     normLower.includes("director") || 
-    normLower.includes("manager") || 
     normLower.includes("vp") || 
     normLower.includes("lead") ||
     normLower.includes("business analyst")
   ) {
     return 1;
   }
+  if (normLower.includes("manager")) return 2;
   return 5;
 };
 
@@ -1044,8 +1052,6 @@ const EmployeeEditModal = ({
     }
   }, [item, isAdd, userLevel, userData]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -1085,17 +1091,19 @@ const EmployeeEditModal = ({
   const loggedInRank = getPositionRank(userData?.position || "");
   const allPos = useMemo(() => {
     const list = Object.keys(accessRules || {});
+    // Remove obsolete 'Sales Manager' if it's still lingering in rules
+    const filteredList = list.filter(p => p !== "Sales Manager");
     const defaults = [
       "Business Analyst",
-      "Sales Manager",
+      "Vegetables Sales Manager",
       "Area Sales Manager",
       "Sales Agronomist",
       "Business Solution",
     ];
     defaults.forEach(d => {
-      if (!list.includes(d)) list.push(d);
+      if (!filteredList.includes(d)) filteredList.push(d);
     });
-    return list;
+    return filteredList;
   }, [accessRules]);
 
   const positions = allPos.filter((p) => {
@@ -1103,6 +1111,8 @@ const EmployeeEditModal = ({
       return true;
     return getPositionRank(p) >= loggedInRank;
   });
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[110] bg-[#181a2c]/50 backdrop-blur-md flex items-center justify-center p-4">
@@ -1839,18 +1849,28 @@ const Dashboard = ({
 
   const allPositionsList = useMemo(() => {
     const list = Object.keys(accessRules || {});
+    // Clean up obsolete 'Sales Manager'
+    const filteredList = list.filter(p => p !== "Sales Manager");
     const defaults = [
       "Business Analyst",
-      "Sales Manager",
+      "Vegetables Sales Manager",
       "Area Sales Manager",
       "Sales Agronomist",
       "Business Solution"
     ];
     defaults.forEach(d => {
-      if (!list.includes(d)) list.push(d);
+      if (!filteredList.includes(d)) filteredList.push(d);
     });
-    return list;
+    return filteredList;
   }, [accessRules]);
+
+  const removeAccessRule = (position: string) => {
+    setAccessRules((prev: Record<string, Record<string, boolean>>) => {
+      const currentRules = { ...prev };
+      delete currentRules[position];
+      return currentRules;
+    });
+  };
 
   const toggleAccessRule = (position: string, page: string) => {
     setAccessRules((prev: Record<string, Record<string, boolean>>) => {
@@ -10737,6 +10757,7 @@ const Dashboard = ({
                     <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Overview Tab</th>
                     <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Temp Tab</th>
                     <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9]">Access Menu</th>
+                    <th className="px-5 py-3 text-[10px] font-bold text-[#8E94B7] uppercase tracking-wider border-b border-[#f1f5f9] text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f5f9]">
@@ -10752,6 +10773,11 @@ const Dashboard = ({
                       <td className="px-5 py-4">{renderAccessCheckbox(position, 'overview')}</td>
                       <td className="px-5 py-4">{renderAccessCheckbox(position, 'temp')}</td>
                       <td className="px-5 py-4">{renderAccessCheckbox(position, 'access')}</td>
+                      <td className="px-5 py-4 text-right">
+                        <button onClick={() => removeAccessRule(position)} className="text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors" title="Hapus Rule">
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -11971,7 +11997,9 @@ export default function App() {
     }
     setAccessRules({
       "Business Analyst": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
-      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Vegetables Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
+      "Commercial Lead": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
+      "Country Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
       "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Sales Agronomist": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Business Solution": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
@@ -12077,7 +12105,9 @@ export default function App() {
     }
     return {
       "Business Analyst": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
-      "Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
+      "Vegetables Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
+      "Commercial Lead": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: false },
+      "Country Head": { home: true, partner: true, stock: true, pog: true, overview: true, temp: true, access: true },
       "Area Sales Manager": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Sales Agronomist": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
       "Business Solution": { home: true, partner: true, stock: true, pog: true, overview: false, temp: false, access: false },
