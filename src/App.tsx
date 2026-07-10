@@ -36,7 +36,9 @@ const SCRIPT_URL =
   (import.meta as any).env.VITE_SCRIPT_URL ||
   (window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1" ||
-  window.location.hostname.includes("run.app")
+  window.location.hostname.includes("run.app") ||
+  window.location.hostname.includes("pages.dev") ||
+  window.location.hostname.includes("cloudflare.com")
     ? "/api"
     : ORIGINAL_SCRIPT_URL);
 
@@ -3422,9 +3424,12 @@ const Dashboard = ({
       if (res.status === "success") {
         setPartnerDeleteModal({ isOpen: false, item: null });
         setChannelsRefreshKey((prev) => prev + 1);
+      } else {
+        alert("Gagal hapus partner: " + (res.message || "Unknown error"));
       }
     } catch (e) {
       console.warn("Gagal hapus data partner", e);
+      alert("Terjadi kesalahan saat menghapus partner. Silakan coba lagi.");
     } finally {
       setIsActionLoading(false);
     }

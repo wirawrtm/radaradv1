@@ -2187,25 +2187,25 @@ async function handleUpdatePartner(body: any) {
       userProvince = getUserProvince(body.user, empData);
     }
 
-    const rowIndex = rowNum - 1;
+    const rowIndexToUpdate = rowNum - 1;
     if (idx.pic !== -1 && body.pic !== undefined) {
-      data[rowIndex][idx.pic] = body.pic;
+      data[rowIndexToUpdate][idx.pic] = body.pic;
     }
     if (idx.upline !== -1) {
-      data[rowIndex][idx.upline] = empDetails.upline || "";
+      data[rowIndexToUpdate][idx.upline] = empDetails.upline || "";
     }
     const resolvedProv = userProvince || empDetails.area;
     if (idx.area !== -1 && resolvedProv) {
-      data[rowIndex][idx.area] = resolvedProv;
+      data[rowIndexToUpdate][idx.area] = resolvedProv;
     }
     if (idx.channel !== -1 && body.name !== undefined && body.name !== "") {
-      data[rowIndex][idx.channel] = body.name;
+      data[rowIndexToUpdate][idx.channel] = body.name;
     }
     if (idx.cat !== -1 && body.category !== undefined && body.category !== "") {
-      data[rowIndex][idx.cat] = body.category;
+      data[rowIndexToUpdate][idx.cat] = body.category;
     }
     if (idx.group !== -1 && userGroup) {
-      data[rowIndex][idx.group] = userGroup;
+      data[rowIndexToUpdate][idx.group] = userGroup;
     }
     await updateSheetValues("channel", data);
   }
@@ -2221,22 +2221,31 @@ async function handleDeletePartner(body: any) {
   );
 
   let rowNum = Number(body.id);
-  let rowIndex = rowNum - 1;
+  let rowIndex = -1;
 
-  if (isNaN(rowNum) || rowNum <= 1 || rowNum > data.length) {
-    if (body.name && idxChannel !== -1) {
-      rowIndex = data.findIndex((row, index) => index > 0 && String(row[idxChannel]).trim().toLowerCase() === String(body.name).trim().toLowerCase());
-      if (rowIndex !== -1) {
-        rowNum = rowIndex + 1;
-      }
+  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
+    rowIndex = rowNum - 1;
+  } else if (body.name && idxChannel !== -1) {
+    // Fallback searching by name
+    rowIndex = data.findIndex(
+      (row, index) =>
+        index > 0 &&
+        String(row[idxChannel] || "")
+          .trim()
+          .toLowerCase() === String(body.name).trim().toLowerCase(),
+    );
+    if (rowIndex !== -1) {
+      rowNum = rowIndex + 1;
     }
   }
 
-  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length && rowIndex > 0) {
+  if (rowIndex > 0 && rowIndex < data.length) {
     data.splice(rowIndex, 1);
-    await updateSheetValues("channel", data);
+    const success = await updateSheetValues("channel", data);
+    if (!success) throw new Error("Gagal menyimpan perubahan ke sheet");
+    return { status: "success" };
   }
-  return { status: "success" };
+  return { status: "error", message: "Data partner tidak ditemukan" };
 }
 
 async function handleUpdateEmployee(body: any) {
