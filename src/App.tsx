@@ -32,12 +32,15 @@ const ORIGINAL_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxUUPKhsEo-LencnYjex3gOhVl7w2tS154VCICVbqGfFSBLAwzv0P7XOu9oMTE1jTUg1g/exec";
 
 // Use the local API proxy if we're on localhost or Cloud Run.
-// For Cloudflare/GitHub Pages, it should fallback to ORIGINAL_SCRIPT_URL unless VITE_SCRIPT_URL is provided.
+// For Cloudflare/GitHub Pages, we allow /api if the user has set up a proxy/worker, 
+// otherwise we fallback to the Apps Script.
 const SCRIPT_URL =
   (import.meta as any).env.VITE_SCRIPT_URL ||
   (window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1" ||
-  window.location.hostname.includes("run.app")
+  window.location.hostname.includes("run.app") ||
+  window.location.hostname.includes("pages.dev") ||
+  window.location.hostname.includes("github.io")
     ? "/api"
     : ORIGINAL_SCRIPT_URL);
 
@@ -3424,9 +3427,13 @@ const Dashboard = ({
   };
 
   const handleDeletePartnerConfirm = async () => {
-    if (!partnerDeleteModal.item?.id) return;
+    if (!partnerDeleteModal.item?.id && !partnerDeleteModal.item?.name) {
+      alert("Data partner tidak valid untuk dihapus (ID & Nama kosong)");
+      return;
+    }
     setIsActionLoading(true);
     try {
+      console.log("[Delete] Sending request to:", SCRIPT_URL);
       const resp = await fetch(SCRIPT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
@@ -3449,6 +3456,7 @@ const Dashboard = ({
       if (res.status === "success") {
         setPartnerDeleteModal({ isOpen: false, item: null });
         setChannelsRefreshKey((prev) => prev + 1);
+        alert(res.message || "Partner berhasil dihapus");
       } else {
         alert("Gagal hapus partner: " + (res.message || "Unknown error"));
       }
@@ -3544,6 +3552,9 @@ const Dashboard = ({
         );
         setEmployeeDeleteModal({ isOpen: false, item: null });
         setEmployeesRefreshKey((prev) => prev + 1);
+        alert(res.message || "Employee berhasil dihapus");
+      } else {
+        alert("Gagal hapus employee: " + (res.message || "Unknown error"));
       }
     } catch (e) {
       console.warn("Gagal hapus data karyawan", e);
