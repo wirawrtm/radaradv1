@@ -532,15 +532,15 @@ function findEmployeeRow(user: string, empData: any[][]): any | null {
   const userIdx = headers.findIndex((h: any) => /^user$|^username$|^user\s*name$/i.test(String(h).trim().toLowerCase()));
   const nameIdx = headers.findIndex((h: any) => /nama|name|pic/i.test(String(h).trim()));
 
-  const lowerUser = String(user).trim().toLowerCase();
+  const targetClean = cleanForMatch(user);
 
   for (let i = 1; i < empData.length; i++) {
     const row = empData[i];
-    const rowName = nameIdx !== -1 ? String(row[nameIdx] || "").trim().toLowerCase() : "";
-    const rowEmail = emailIdx !== -1 ? String(row[emailIdx] || "").trim().toLowerCase() : "";
-    const rowUser = userIdx !== -1 ? String(row[userIdx] || "").trim().toLowerCase() : "";
+    const rowName = nameIdx !== -1 ? cleanForMatch(row[nameIdx]) : "";
+    const rowEmail = emailIdx !== -1 ? cleanForMatch(row[emailIdx]) : "";
+    const rowUser = userIdx !== -1 ? cleanForMatch(row[userIdx]) : "";
 
-    if (rowUser === lowerUser || rowName === lowerUser || rowEmail === lowerUser) {
+    if (rowUser === targetClean || rowName === targetClean || rowEmail === targetClean) {
       return row;
     }
   }
@@ -2114,6 +2114,19 @@ async function handleAddPartner(body: any) {
 
   if (idx.channel === -1) throw new Error("Kolom nama partner tidak ditemukan");
 
+  // Prevent duplicate partners!
+  if (body.name) {
+    const cleanNewName = cleanForMatch(body.name);
+    const existingIndex = data.findIndex(
+      (row, idxVal) =>
+        idxVal > 0 &&
+        cleanForMatch(row[idx.channel]) === cleanNewName,
+    );
+    if (existingIndex !== -1) {
+      throw new Error(`Partner dengan nama "${body.name}" sudah ada di database.`);
+    }
+  }
+
   const empData = (await getSheetValues("employee")) || [];
   const empDetails = findEmployeeDetails(body.pic, empData);
   let userGroup = body.group || "";
@@ -2163,31 +2176,42 @@ async function handleUpdatePartner(body: any) {
     ),
   };
 
-  let rowNum = Number(body.id);
   let rowIndex = -1;
+  const rowNum = Number(body.id);
 
-  // 1. Try finding by row number first
+  // 1. Check if rowNum is within bounds and the name actually matches using cleanForMatch
   if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
-    rowIndex = rowNum - 1;
+    const potentialRow = data[rowNum - 1];
+    if (potentialRow && idx.channel !== -1) {
+      const currentClean = cleanForMatch(potentialRow[idx.channel]);
+      const cleanOrig = body.originalName ? cleanForMatch(body.originalName) : "";
+      const cleanName = body.name ? cleanForMatch(body.name) : "";
+      
+      if (cleanOrig && currentClean === cleanOrig) {
+        rowIndex = rowNum - 1;
+      } else if (cleanName && currentClean === cleanName) {
+        rowIndex = rowNum - 1;
+      }
+    }
   }
 
-  // 2. Try searching by originalName if provided
+  // 2. If row number didn't match, search by originalName across all rows using cleanForMatch
   if (rowIndex === -1 && body.originalName && idx.channel !== -1) {
-    const cleanOrig = String(body.originalName).trim().toLowerCase();
+    const targetClean = cleanForMatch(body.originalName);
     rowIndex = data.findIndex(
       (row, idxVal) =>
         idxVal > 0 &&
-        String(row[idx.channel] || "").trim().toLowerCase() === cleanOrig,
+        cleanForMatch(row[idx.channel]) === targetClean,
     );
   }
 
-  // 3. Try searching by name if provided
+  // 3. Fallback to searching by name across all rows using cleanForMatch
   if (rowIndex === -1 && body.name && idx.channel !== -1) {
-    const cleanName = String(body.name).trim().toLowerCase();
+    const targetClean = cleanForMatch(body.name);
     rowIndex = data.findIndex(
       (row, idxVal) =>
         idxVal > 0 &&
-        String(row[idx.channel] || "").trim().toLowerCase() === cleanName,
+        cleanForMatch(row[idx.channel]) === targetClean,
     );
   }
 
@@ -2240,32 +2264,28 @@ async function handleDeletePartner(body: any) {
 
   if (idxChannel === -1) throw new Error("Kolom nama partner tidak ditemukan di sheet");
 
-  let rowNum = Number(body.id);
   let rowIndex = -1;
+  const rowNum = Number(body.id);
 
-  // Try searching by ID first
+  // 1. Try searching by ID first and verify name matches using cleanForMatch
   if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
-    rowIndex = rowNum - 1;
-    // Verify name matches if provided, to ensure we're deleting the right row
-    if (body.name && data[rowIndex]) {
-      const currentName = String(data[rowIndex][idxChannel] || "").trim().toLowerCase();
-      const targetName = String(body.name).trim().toLowerCase();
-      if (currentName !== targetName) {
-        console.warn(`[Delete] ID mismatch: ID ${rowNum} has name "${currentName}" but request said "${targetName}". Falling back to name search.`);
-        rowIndex = -1; // Reset to force name search
+    const potentialRow = data[rowNum - 1];
+    if (potentialRow && idxChannel !== -1) {
+      const currentClean = cleanForMatch(potentialRow[idxChannel]);
+      const targetClean = body.name ? cleanForMatch(body.name) : "";
+      if (!targetClean || currentClean === targetClean) {
+        rowIndex = rowNum - 1;
       }
     }
   }
 
-  // Fallback searching by name if ID failed or name mismatched
-  if (rowIndex === -1 && body.name) {
-    const targetName = String(body.name).trim().toLowerCase();
+  // 2. Fallback searching by name using cleanForMatch
+  if (rowIndex === -1 && body.name && idxChannel !== -1) {
+    const targetClean = cleanForMatch(body.name);
     rowIndex = data.findIndex(
       (row, index) =>
         index > 0 &&
-        String(row[idxChannel] || "")
-          .trim()
-          .toLowerCase() === targetName,
+        cleanForMatch(row[idxChannel]) === targetClean,
     );
   }
 

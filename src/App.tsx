@@ -479,7 +479,7 @@ const getDdaOfUser = (
       const matched = Object.keys(teamProfiles).find(
         (k) => cleanForMatch(k) === cleanPic,
       );
-      return matched || picName;
+      return (matched && teamProfiles[matched]?.name) || picName;
     }
 
     let current = cleanPic;
@@ -501,7 +501,7 @@ const getDdaOfUser = (
         const matched = Object.keys(teamProfiles).find(
           (k) => cleanForMatch(k) === parentClean,
         );
-        return matched || profile.upline;
+        return (matched && teamProfiles[matched]?.name) || profile.upline;
       }
 
       current = parentClean;
@@ -838,11 +838,14 @@ const PartnerEditModal = ({
 
   useEffect(() => {
     if (item) {
-      setNewPic(String(item.pic || "").trim());
+      const rawPic = String(item.pic || "").trim();
+      const cleanRawPic = cleanForMatch(rawPic);
+      const matchedPic = availablePics?.find((p) => cleanForMatch(p) === cleanRawPic) || rawPic;
+      setNewPic(matchedPic);
       setPartnerName(String(item.name || "").trim());
       setCategory(String(item.category || "").trim());
     }
-  }, [item]);
+  }, [item, availablePics]);
 
   if (!isOpen) return null;
 
@@ -10043,7 +10046,7 @@ const Dashboard = ({
                           {channel.name}
                         </p>
                         <p className="text-[10px] font-semibold text-[#8E94B7]">
-                          {channel.pic || "-"}
+                          {normalizeName(channel.pic) || "-"}
                         </p>
                       </div>
                       <div className="flex gap-2">
