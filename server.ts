@@ -2220,32 +2220,52 @@ async function handleDeletePartner(body: any) {
     /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
   );
 
+  if (idxChannel === -1) throw new Error("Kolom nama partner tidak ditemukan di sheet");
+
   let rowNum = Number(body.id);
   let rowIndex = -1;
 
+  // Try searching by ID first
   if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
     rowIndex = rowNum - 1;
-  } else if (body.name && idxChannel !== -1) {
-    // Fallback searching by name
+    // Verify name matches if provided, to ensure we're deleting the right row
+    if (body.name && data[rowIndex]) {
+      const currentName = String(data[rowIndex][idxChannel] || "").trim().toLowerCase();
+      const targetName = String(body.name).trim().toLowerCase();
+      if (currentName !== targetName) {
+        console.warn(`[Delete] ID mismatch: ID ${rowNum} has name "${currentName}" but request said "${targetName}". Falling back to name search.`);
+        rowIndex = -1; // Reset to force name search
+      }
+    }
+  }
+
+  // Fallback searching by name if ID failed or name mismatched
+  if (rowIndex === -1 && body.name) {
+    const targetName = String(body.name).trim().toLowerCase();
     rowIndex = data.findIndex(
       (row, index) =>
         index > 0 &&
         String(row[idxChannel] || "")
           .trim()
-          .toLowerCase() === String(body.name).trim().toLowerCase(),
+          .toLowerCase() === targetName,
     );
-    if (rowIndex !== -1) {
-      rowNum = rowIndex + 1;
-    }
   }
 
   if (rowIndex > 0 && rowIndex < data.length) {
+    const deletedName = data[rowIndex][idxChannel];
     data.splice(rowIndex, 1);
     const success = await updateSheetValues("channel", data);
-    if (!success) throw new Error("Gagal menyimpan perubahan ke sheet");
-    return { status: "success" };
+    if (!success) throw new Error("Gagal menyimpan perubahan ke Google Sheets");
+    console.log(`[Delete] Successfully deleted partner: ${deletedName} at row ${rowIndex + 1}`);
+    return { status: "success", message: `Partner ${deletedName} berhasil dihapus` };
   }
-  return { status: "error", message: "Data partner tidak ditemukan" };
+
+  return { 
+    status: "error", 
+    message: rowIndex === -1 
+      ? `Data partner "${body.name || body.id}" tidak ditemukan` 
+      : "Indeks baris tidak valid untuk penghapusan"
+  };
 }
 
 async function handleUpdateEmployee(body: any) {
@@ -2341,10 +2361,12 @@ async function handleDeleteEmployee(body: any) {
   const nameIdx = headers.findIndex((h: any) =>
     /nama|name|pic/i.test(String(h).trim()),
   );
-  if (nameIdx === -1) throw new Error("Name column not found");
+  if (nameIdx === -1) throw new Error("Kolom nama employee tidak ditemukan");
 
   const targetClean = cleanForMatch(body.name);
   let targetRow = -1;
+  
+  // Search for the employee by name
   for (let i = 1; i < data.length; i++) {
     if (cleanForMatch(data[i][nameIdx]) === targetClean) {
       targetRow = i + 1;
@@ -2353,13 +2375,17 @@ async function handleDeleteEmployee(body: any) {
   }
 
   if (targetRow !== -1) {
+    const deletedName = data[targetRow - 1][nameIdx];
     data.splice(targetRow - 1, 1);
-    await updateSheetValues("employee", data);
+    const success = await updateSheetValues("employee", data);
+    if (!success) throw new Error("Gagal menyimpan perubahan ke Google Sheets");
+    
+    console.log(`[Delete] Successfully deleted employee: ${deletedName} at row ${targetRow}`);
+    cachedEmployeeList = null;
+    return { status: "success", message: `Employee ${deletedName} berhasil dihapus` };
   } else {
-    throw new Error("Employee not found with name: " + body.name);
+    return { status: "error", message: `Employee dengan nama "${body.name}" tidak ditemukan` };
   }
-  cachedEmployeeList = null;
-  return { status: "success" };
 }
 
 async function handleGetAccessRules() {

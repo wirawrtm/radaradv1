@@ -31,14 +31,13 @@ import {
 const ORIGINAL_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbxUUPKhsEo-LencnYjex3gOhVl7w2tS154VCICVbqGfFSBLAwzv0P7XOu9oMTE1jTUg1g/exec";
 
-// Use the local API proxy if we're on localhost or Cloud Run, otherwise fall back to direct Apps Script for GitHub Pages
+// Use the local API proxy if we're on localhost or Cloud Run.
+// For Cloudflare/GitHub Pages, it should fallback to ORIGINAL_SCRIPT_URL unless VITE_SCRIPT_URL is provided.
 const SCRIPT_URL =
   (import.meta as any).env.VITE_SCRIPT_URL ||
   (window.location.hostname === "localhost" ||
   window.location.hostname === "127.0.0.1" ||
-  window.location.hostname.includes("run.app") ||
-  window.location.hostname.includes("pages.dev") ||
-  window.location.hostname.includes("cloudflare.com")
+  window.location.hostname.includes("run.app")
     ? "/api"
     : ORIGINAL_SCRIPT_URL);
 
@@ -1835,6 +1834,12 @@ const Dashboard = ({
           rules: filteredRules
         })
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error("Respon server tidak valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         setAccessSaveSuccess(true);
@@ -3354,6 +3359,12 @@ const Dashboard = ({
           user: userData.name,
         }),
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error("Respon server tidak valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         setConsolidationSuccessMsg("Konsolidasi database berhasil disimpan!");
@@ -3394,6 +3405,12 @@ const Dashboard = ({
           province: userData?.province || "",
         }),
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error("Respon server tidak valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         setPartnerEditModal({ isOpen: false, item: null });
@@ -3420,6 +3437,14 @@ const Dashboard = ({
           user: userData.name,
         }),
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        const text = await resp.text();
+        console.error("Non-JSON response from server:", text);
+        throw new Error("Server tidak memberikan respon JSON yang valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         setPartnerDeleteModal({ isOpen: false, item: null });
@@ -3452,6 +3477,12 @@ const Dashboard = ({
           ...updatedFields,
         }),
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error("Respon server tidak valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         if (isAdd) {
@@ -3496,6 +3527,12 @@ const Dashboard = ({
           name: employeeDeleteModal.item.name,
         }),
       });
+
+      const contentType = resp.headers.get("content-type");
+      if (!resp.ok || !contentType || !contentType.includes("application/json")) {
+        throw new Error("Respon server tidak valid. Pastikan backend sudah terkonfigurasi.");
+      }
+
       const res = await resp.json();
       if (res.status === "success") {
         setEmployees((prev) =>
