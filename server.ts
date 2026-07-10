@@ -153,7 +153,7 @@ function normalizePosition(pos: string | undefined): string {
   const clean = String(pos).toLowerCase().replace(/\s+/g, "");
   if (clean === "businessanalyst" || clean === "analyst")
     return "Business Analyst";
-  if (clean === "salesmanager" || clean === "sm") return "Sales Manager";
+  if (clean === "salesmanager" || clean === "sm") return "Vegetables Sales Manager";
   if (clean === "areasalesmanager" || clean === "asm")
     return "Area Sales Manager";
   if (clean === "salesagronomist" || clean === "sa") return "Sales Agronomist";
@@ -883,7 +883,7 @@ async function handleGetChannels(user: string) {
       /pic|user|nama|analyst|solution/i.test(String(h).trim()),
     ),
     channel: headers.findIndex((h: any) =>
-      /channel|kiosk|nama toko|toko/i.test(String(h).trim()),
+      /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
     ),
     cat: headers.findIndex((h: any) =>
       /kategori|category|klasifikasi|^cat$/i.test(String(h).trim()),
@@ -1060,7 +1060,7 @@ async function handleGetDrSalesData(user: string) {
     qty: headers.findIndex((h: any) => /qty|quantity/i.test(String(h).trim())),
     type: headers.findIndex((h: any) => /order type/i.test(String(h).trim())),
     channel: headers.findIndex((h: any) =>
-      /channel|kiosk/i.test(String(h).trim()),
+      /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
     ),
     lot: headers.findIndex((h: any) => /lot/i.test(String(h).trim())),
     desc: headers.findIndex((h: any) =>
@@ -2096,7 +2096,7 @@ async function handleAddPartner(body: any) {
       /pic|user|nama|analyst|solution/i.test(String(h).trim()),
     ),
     channel: headers.findIndex((h: any) =>
-      /channel|kiosk|nama toko|toko/i.test(String(h).trim()),
+      /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
     ),
     cat: headers.findIndex((h: any) =>
       /kategori|category|klasifikasi|^cat$/i.test(String(h).trim()),
@@ -2138,6 +2138,7 @@ async function handleAddPartner(body: any) {
 }
 
 async function handleUpdatePartner(body: any) {
+  console.log("handleUpdatePartner body:", body);
   const data = await getSheetValues("channel");
   if (!data) throw new Error("Sheet 'channel' tidak ditemukan");
   const headers = data[0];
@@ -2146,7 +2147,7 @@ async function handleUpdatePartner(body: any) {
       /pic|user|nama|analyst|solution/i.test(String(h).trim()),
     ),
     channel: headers.findIndex((h: any) =>
-      /channel|kiosk|nama toko|toko/i.test(String(h).trim()),
+      /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
     ),
     cat: headers.findIndex((h: any) =>
       /kategori|category|klasifikasi|^cat$/i.test(String(h).trim()),
@@ -2162,8 +2163,19 @@ async function handleUpdatePartner(body: any) {
     ),
   };
 
-  const rowNum = Number(body.id);
-  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
+  let rowNum = Number(body.id);
+  let rowIndex = rowNum - 1;
+
+  if (isNaN(rowNum) || rowNum <= 1 || rowNum > data.length) {
+    if (body.name && idx.channel !== -1) {
+      rowIndex = data.findIndex((row, index) => index > 0 && String(row[idx.channel]).trim().toLowerCase() === String(body.name).trim().toLowerCase());
+      if (rowIndex !== -1) {
+        rowNum = rowIndex + 1;
+      }
+    }
+  }
+
+  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length && rowIndex > 0) {
     const empData = (await getSheetValues("employee")) || [];
     const empDetails = findEmployeeDetails(body.pic, empData);
     let userGroup = body.group || "";
@@ -2203,9 +2215,25 @@ async function handleUpdatePartner(body: any) {
 async function handleDeletePartner(body: any) {
   const data = await getSheetValues("channel");
   if (!data) throw new Error("Sheet 'channel' tidak ditemukan");
-  const rowNum = Number(body.id);
-  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length) {
-    data.splice(rowNum - 1, 1);
+  const headers = data[0];
+  const idxChannel = headers.findIndex((h: any) =>
+    /channel|kiosk|nama toko|toko|name/i.test(String(h).trim()),
+  );
+
+  let rowNum = Number(body.id);
+  let rowIndex = rowNum - 1;
+
+  if (isNaN(rowNum) || rowNum <= 1 || rowNum > data.length) {
+    if (body.name && idxChannel !== -1) {
+      rowIndex = data.findIndex((row, index) => index > 0 && String(row[idxChannel]).trim().toLowerCase() === String(body.name).trim().toLowerCase());
+      if (rowIndex !== -1) {
+        rowNum = rowIndex + 1;
+      }
+    }
+  }
+
+  if (!isNaN(rowNum) && rowNum > 1 && rowNum <= data.length && rowIndex > 0) {
+    data.splice(rowIndex, 1);
     await updateSheetValues("channel", data);
   }
   return { status: "success" };
@@ -2344,7 +2372,7 @@ async function handleGetAccessRules() {
       }
     }
     // Always guarantee defaults are present
-    const defaults = ["Business Analyst", "Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution"];
+    const defaults = ["Business Analyst", "Vegetables Sales Manager", "Area Sales Manager", "Sales Agronomist", "Business Solution"];
     defaults.forEach(d => {
       if (!uniquePositions.includes(d)) {
         uniquePositions.push(d);

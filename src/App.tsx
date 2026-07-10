@@ -3414,6 +3414,7 @@ const Dashboard = ({
         body: JSON.stringify({
           action: "deletePartner",
           id: partnerDeleteModal.item.id,
+          name: partnerDeleteModal.item.name,
           user: userData.name,
         }),
       });
