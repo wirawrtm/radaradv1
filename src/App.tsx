@@ -503,7 +503,7 @@ const getDdaOfUser = (
       current = parentClean;
     }
 
-    return realRootName;
+    return picName;
   };
 
   const result = calculate();
@@ -4832,15 +4832,12 @@ const Dashboard = ({
     const teamMembersCleanSet = new Set(
       activePogMembers.map((m) => cleanForMatch(m)).filter(Boolean),
     );
-    const nonLeafTeamMembersClean = activePogMembers
-      .map((m) => cleanForMatch(m))
-      .filter(Boolean);
+    
 
     const filteredData = pogDataProcessed.filter((item) => {
       const picClean = cleanForMatch(item.pic);
       const isTeamMember =
-        teamMembersCleanSet.has(picClean) ||
-        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+        teamMembersCleanSet.has(picClean);
       const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
       return isTeamMember && isCropMatch;
     });
@@ -5621,9 +5618,7 @@ const Dashboard = ({
     const teamMembersCleanSet = new Set(
       activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
     );
-    const nonLeafTeamMembersClean = activeTeamMembers
-      .map((m) => cleanForMatch(m))
-      .filter(Boolean);
+    
 
     // Filter Team AND Filter Crops (Using Set.has for O(1) performance)
     const currentMonth = new Date().getMonth();
@@ -5632,8 +5627,7 @@ const Dashboard = ({
         const teamData = enrichedData.filter((item) => {
       const picClean = cleanForMatch(item.pic);
       let isTeamMember =
-        teamMembersCleanSet.has(picClean) ||
-        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+        teamMembersCleanSet.has(picClean);
         
       if (!isTeamMember && computedTeamProfiles) {
         const emp = computedTeamProfiles[picClean];
@@ -6341,9 +6335,7 @@ const Dashboard = ({
     const teamMembersCleanSet = new Set(
       activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
     );
-    const nonLeafTeamMembersClean = activeTeamMembers
-      .map((m) => cleanForMatch(m))
-      .filter(Boolean);
+    
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
@@ -6352,8 +6344,7 @@ const Dashboard = ({
       (item) => {
         const picClean = cleanForMatch(item.pic);
         const isTeamMember =
-          teamMembersCleanSet.has(picClean) ||
-          nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+          teamMembersCleanSet.has(picClean);
         const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
         const isClusterMatch = selectedClusters.includes(item.cluster);
 
@@ -6447,15 +6438,12 @@ const Dashboard = ({
     const teamMembersCleanSet = new Set(
       activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
     );
-    const nonLeafTeamMembersClean = activeTeamMembers
-      .map((m) => cleanForMatch(m))
-      .filter(Boolean);
+    
 
     const filteredData = pogDataProcessed.filter((item) => {
       const picClean = cleanForMatch(item.pic);
       const isTeamMember =
-        teamMembersCleanSet.has(picClean) ||
-        nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+        teamMembersCleanSet.has(picClean);
       const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
       return isTeamMember && isCropMatch;
     });
@@ -6513,16 +6501,13 @@ const Dashboard = ({
     const teamMembersCleanSet = new Set(
       activeTeamMembers.map((m) => cleanForMatch(m)).filter(Boolean),
     );
-    const nonLeafTeamMembersClean = activeTeamMembers
-      .map((m) => cleanForMatch(m))
-      .filter(Boolean);
+    
 
     const displayedRawItems = (enrichedSummaryDataRef.current || []).filter(
       (item) => {
         const picClean = cleanForMatch(item.pic);
         const isTeamMember =
-          teamMembersCleanSet.has(picClean) ||
-          nonLeafTeamMembersClean.some((m) => picClean.includes(m));
+          teamMembersCleanSet.has(picClean);
         const isCropMatch = checkCropMatch(item.crops, filterBelowCrop);
         const isClusterMatch = selectedClusters.includes(item.cluster);
 
